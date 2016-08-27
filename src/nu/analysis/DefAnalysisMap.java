@@ -15,8 +15,9 @@ import java.util.Set;
 import nu.analysis.values.RightValue;
 import soot.Value;
 
-public class DefAnalysisMap implements Map<Value, Set<RightValue>> {
-	private HashMap<Value, Set<RightValue>> map;
+public class DefAnalysisMap implements Map<Integer, Set<RightValue>> {
+	private HashMap<Integer, Set<RightValue>> map;
+	private HashMap<Integer, Value> id2Value;
 	Comparator<RightValue> RightValueComparator = (RightValue a, RightValue b) -> {
 	    return a.toString().compareTo(b.toString());
 	};
@@ -25,34 +26,41 @@ public class DefAnalysisMap implements Map<Value, Set<RightValue>> {
 	};
 	
 	public DefAnalysisMap(){
-		map = new HashMap<Value, Set<RightValue>>();
+		map = new HashMap<Integer, Set<RightValue>>();
+		id2Value = new HashMap<Integer, Value>();
 	}
 	
 	public void addNewValue(Value key, RightValue value){
-		if(map.containsKey(key)){
-			map.get(key).add(value);
+		Integer id = key.equivHashCode();
+		if(map.containsKey(id)){
+			map.get(id).add(value);
 		}
 		else{
 			Set<RightValue> l = new HashSet<RightValue>();
 			l.add(value);
-			map.put(key, l);
+			map.put(id, l);
+			id2Value.put(id, key);
 		}
 	}
 	public void addNewValueSet(Value key, Set<RightValue> values){
-		if(map.containsKey(key)){
-			map.get(key).addAll(values);
+		Integer id = key.equivHashCode();
+		if(map.containsKey(id)){
+			map.get(id).addAll(values);
 		}
 		else{
 			Set<RightValue> l = new HashSet<RightValue>();
 			l.addAll(values);
-			map.put(key, l);
+			map.put(id, l);
+			id2Value.put(id, key);
 		}
 	}
 	//kill existing one, if any.
 	public void setNewValue(Value key, RightValue value){
+		Integer id = key.equivHashCode();
 		Set<RightValue> l = new HashSet<RightValue>();
 		l.add(value);
-		map.put(key, l);
+		map.put(id, l);
+		id2Value.put(id, key);
 	}
 
 	@Override
@@ -67,31 +75,62 @@ public class DefAnalysisMap implements Map<Value, Set<RightValue>> {
 
 	@Override
 	public boolean containsKey(Object key) {
-		return map.containsKey(key);
+		if(key instanceof Value){
+			Integer id = ((Value)key).equivHashCode();
+			if(map.containsKey(id))
+				return true;
+		}
+		else if(key instanceof Integer){
+			return map.containsKey((Integer)key);
+		}
+		else{
+			System.out.println("error: containsKey object is not Value: "+key.getClass());
+		}
+		return false;
 	}
 
 	@Override
 	public boolean containsValue(Object value) {
-		return map.containsValue(value);
+		if(value instanceof RightValue){
+			for(Set<RightValue> values : map.values()){
+				if(values.contains(value))
+					return true;
+			}
+		}
+		else{
+			System.out.println("error: containsValue object is not RightValue: "+value.getClass());
+		}
+		return false;
 	}
 
 	@Override
 	public Set<RightValue> get(Object key) {
-		return map.get(key);
+		Integer id = ((Value)key).equivHashCode();
+		return map.get(id);
 	}
 
-	@Override
 	public Set<RightValue> put(Value key, Set<RightValue> value) {
+		Integer id = key.equivHashCode();
+		id2Value.put(id, key);
+		return map.put(id, value);
+	}
+	
+	@Override
+	public Set<RightValue> put(Integer key, Set<RightValue> value) {
 		return map.put(key, value);
 	}
 
 	@Override
 	public Set<RightValue> remove(Object key) {
-		return map.remove(key);
+		if(key instanceof Value){
+			Integer id = ((Value)key).equivHashCode();
+			return map.remove(id);
+		}
+		return null;
 	}
 
 	@Override
-	public void putAll(Map<? extends Value, ? extends Set<RightValue>> m) {
+	public void putAll(Map<? extends Integer, ? extends Set<RightValue>> m) {
 		map.putAll(m);
 		
 	}
@@ -102,8 +141,13 @@ public class DefAnalysisMap implements Map<Value, Set<RightValue>> {
 	}
 
 	@Override
-	public Set<Value> keySet() {
-		return map.keySet();
+	public Set<Integer> keySet() {
+		//THIS FUNCTION IS DISABLED because it's easy to get confused with keyValueSet()
+		return null;
+	}
+	
+	public HashSet<Value> keyValueSet() {
+		return new HashSet<Value>(id2Value.values());
 	}
 
 	@Override
@@ -112,7 +156,7 @@ public class DefAnalysisMap implements Map<Value, Set<RightValue>> {
 	}
 
 	@Override
-	public Set<java.util.Map.Entry<Value, Set<RightValue>>> entrySet() {
+	public Set<java.util.Map.Entry<Integer, Set<RightValue>>> entrySet() {
 		
 		return map.entrySet();
 	}
@@ -125,13 +169,13 @@ public class DefAnalysisMap implements Map<Value, Set<RightValue>> {
 		DefAnalysisMap rightMap = (DefAnalysisMap)right;
 		if(map.keySet().size() != rightMap.keySet().size())
 			return false;
-		for(Value k : map.keySet()){
-			if(!rightMap.containsKey(k))
+		for(Integer id : map.keySet()){
+			if(!rightMap.containsKey(id))
 				return false;
-			if(map.get(k).size() != rightMap.get(k).size())
+			if(map.get(id).size() != rightMap.get(id).size())
 				return false;
-			Set<RightValue> rightValues = rightMap.get(k); 
-			for(Value v : map.get(k)){
+			Set<RightValue> rightValues = rightMap.get(id); 
+			for(RightValue v : map.get(id)){
 				if(! rightValues.contains(v))
 					return false;
 			}
@@ -142,13 +186,21 @@ public class DefAnalysisMap implements Map<Value, Set<RightValue>> {
 	
 	@Override 
 	public Object clone(){
-		HashMap<Value, List<Value>> newMap = new HashMap<Value, List<Value>>();
-		for(Value k : map.keySet()){
-			newMap.put(k, new LinkedList<Value>(map.get(k)));
+		DefAnalysisMap dam = new DefAnalysisMap();
+		for(Value k : id2Value.values()){
+			dam.addNewValueSet(k, get(k));
 		}
-		return newMap;
+		return dam;
 	}
 	
+	public HashMap<Integer, Set<RightValue>> getMap() {
+		return map;
+	}
+
+	public HashMap<Integer, Value> getId2Value() {
+		return id2Value;
+	}
+
 	@Override
 	public String toString(){
 		
@@ -156,13 +208,14 @@ public class DefAnalysisMap implements Map<Value, Set<RightValue>> {
 			if(map==null)
 				return "null";
 			StringBuilder sb = new StringBuilder();
-			List<Value> keys = new ArrayList<Value>(map.keySet());
-			Collections.sort(keys, ValueComparator);
+			List<Integer> ids = new ArrayList<Integer>(map.keySet());
+			Collections.sort(ids);
 			
-			for(Value k : keys){
+			for(Integer id : ids){
+				Value k = id2Value.get(id);
 				String kStr = String.format("%30s",k.toString());
 				sb.append(kStr+":[");
-				List<RightValue> tmp2 = new ArrayList<RightValue>(map.get(k));
+				List<RightValue> tmp2 = new ArrayList<RightValue>(map.get(id));
 				Collections.sort(tmp2, RightValueComparator);
 				for(Value v : tmp2)
 					sb.append(v.toString()+",");
@@ -190,6 +243,5 @@ public class DefAnalysisMap implements Map<Value, Set<RightValue>> {
 		sb.append("],");
 		return sb.toString();
 	}
-	
 	
 }

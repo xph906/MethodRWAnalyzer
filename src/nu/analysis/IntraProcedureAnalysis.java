@@ -92,6 +92,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 			DefAnalysisMap out) {
 		//copy in to out.
 		copy(in, out);
+		assert(in.equals(out));
 		
 		if(d instanceof IdentityStmt){
 			IdentityStmt is = (IdentityStmt)d;
@@ -339,17 +340,73 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		//!in2.contains(X.f1) && in2.values.contains(X.f1)
 		//out[X.f1] = [in1.contains(X.f1)  + X.f1].
 		out.clear();
-		for(Value k : in1.keySet()){
+		for(Value k : in1.keyValueSet()){
 			for(RightValue v : in1.get(k))
 				out.addNewValue(k, v);
-			if(!in2.keySet().contains(k))
-				out.addNewValue(k, new UndefinedValue(k));
+			if(!in2.keyValueSet().contains(k)){
+				if(k instanceof ArrayRef){
+					List<RightValue> tmp = fromArrayRef2RightValue((ArrayRef)k, in2);
+					if(tmp == null)
+						out.addNewValue(k, new UndefinedValue(k));
+					else{
+						for(RightValue rv : tmp){
+							out.addNewValue(k, new UndefinedValue(rv));
+						}
+					}
+				}
+				else if(k instanceof InstanceFieldRef){
+					List<RightValue> tmp = fromInstanceFieldRef2InstanceFieldValue((InstanceFieldRef)k, in2);
+					if(tmp == null)
+						out.addNewValue(k, new UndefinedValue(k));
+					else{
+						for(RightValue rv : tmp){
+							out.addNewValue(k, new UndefinedValue(rv));
+						}
+					}
+				}
+				else if(k instanceof StaticFieldRef){
+					StaticFieldRef tmp = (StaticFieldRef)k;
+					StaticFieldValue sfr = new StaticFieldValue(tmp.getField().getDeclaringClass(), tmp.getField());
+					out.addNewValue(k, new UndefinedValue(sfr));
+				}
+				else{
+					out.addNewValue(k, new UndefinedValue(k));
+				}
+			}
 		}
-		for(Value k : in2.keySet()){
+		for(Value k : in2.keyValueSet()){
 			for(RightValue v : in2.get(k))
 				out.addNewValue(k, v);
-			if(!in1.keySet().contains(k))
-				out.addNewValue(k, new UndefinedValue(k));
+			if(!in1.keyValueSet().contains(k)){
+				if(k instanceof ArrayRef){
+					List<RightValue> tmp = fromArrayRef2RightValue((ArrayRef)k, in1);
+					if(tmp == null)
+						out.addNewValue(k, new UndefinedValue(k));
+					else{
+						for(RightValue rv : tmp){
+							out.addNewValue(k, new UndefinedValue(rv));
+						}
+					}
+				}
+				else if(k instanceof InstanceFieldRef){
+					List<RightValue> tmp = fromInstanceFieldRef2InstanceFieldValue((InstanceFieldRef)k, in1);
+					if(tmp == null)
+						out.addNewValue(k, new UndefinedValue(k));
+					else{
+						for(RightValue rv : tmp){
+							out.addNewValue(k, new UndefinedValue(rv));
+						}
+					}
+				}
+				else if(k instanceof StaticFieldRef){
+					StaticFieldRef tmp = (StaticFieldRef)k;
+					StaticFieldValue sfr = new StaticFieldValue(tmp.getField().getDeclaringClass(), tmp.getField());
+					out.addNewValue(k, new UndefinedValue(sfr));
+				}
+				else{
+					out.addNewValue(k, new UndefinedValue(k));
+				}
+			}
 		}
 	}
 	
@@ -371,12 +428,10 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 			System.err.println("error: copy dest is null");
 		}
 		dest.clear();
-		for(Value k : source.keySet()){
-			Set<RightValue> tmp = new HashSet<RightValue>();
-			for(RightValue rv : source.get(k))
-				tmp.add((RightValue)rv.clone());
-			dest.put(k, tmp);
-		}	
+		
+		for(Value k : source.getId2Value().values()){
+			dest.addNewValueSet(k, source.get(k));
+		}
 	}
 
 	/*
@@ -486,7 +541,11 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		fields.addFirst(f);
 		if(in.containsKey(b)){
 			for(RightValue rv : in.get(b)){
-				if(rv instanceof AtomRightValue){
+				if(rv instanceof ConstantValue || rv instanceof UndefinedValue){
+					System.out.println("ALERT fromInstanceFieldRef2InstanceFieldValue base is const or undefined.");
+					System.out.println("  do nothing. "+rv);
+				}
+				else if(rv instanceof AtomRightValue){
 					List<SootField> newFields = copyList(fields);
 					rs.add(new InstanceFieldValue((AtomRightValue)rv, newFields));
 				}
@@ -513,12 +572,27 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		return rs;
 	}
 	
+	/*private Value findKeyFromInSet(DefAnalysisMap in, Value arg){
+		if(in.containsKey(arg))
+			return arg;
+		else {
+			int hash = arg.equivHashCode();
+			for(Value v : in.keySet()){
+				if(hash == v.equivHashCode())
+					return v;
+			}
+		}
+		return null;
+	}*/
+	
 	private Set<RightValue> resolveRightValue(Value arg,  DefAnalysisMap in, String msg){
 		Set<RightValue> values = new HashSet<RightValue>();
+		System.out.println("YYY "+arg);
 		if(arg instanceof Constant){
 			values.add(new ConstantValue(arg));
 		}
 		else if(in.containsKey(arg)){
+			System.out.println("  YYY1 "+arg);
 			List<RightValue> tmp = new ArrayList<RightValue>(in.get(arg));
 			Collections.sort(tmp, ValueComparator);
 			for(RightValue v : tmp)
@@ -526,6 +600,11 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		}
 		else if(arg instanceof Ref){
 			//note that at this point, we cannot find original value from in.
+			System.out.println("  YYY2 "+arg);
+			for(Value kkk : in.keyValueSet()){
+				System.out.println("  KKK:"+kkk);
+			}
+			//System.out.println("  MMM:"+(findKeyFromInSet(in, arg)));
 			System.out.println("  DEBUG: "+msg+" do base searching for ref value: "+arg);
 			if(arg instanceof ArrayRef){
 				ArrayRef arrRef = (ArrayRef)arg;

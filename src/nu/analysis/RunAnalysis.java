@@ -45,13 +45,13 @@ public class RunAnalysis {
 			System.exit(1);
 		}*/
 		
-		//String mainJarFile = "/Users/a/Projects/AndroidDataFlow/apps/TestJava.jar";
-		//String rtJarLocation = "/Library/Java/JavaVirtualMachines/jdk1.8.0_45.jdk//Contents/Home/jre/lib/rt.jar";
-		//String jceJarLocation = "/Library/Java/JavaVirtualMachines/jdk1.8.0_45.jdk//Contents/Home/jre/lib/jce.jar";
+		String mainJarFile = "/Users/a/Projects/AndroidDataFlow/apps/TestJava.jar";
+		String rtJarLocation = "/Library/Java/JavaVirtualMachines/jdk1.8.0_45.jdk//Contents/Home/jre/lib/rt.jar";
+		String jceJarLocation = "/Library/Java/JavaVirtualMachines/jdk1.8.0_45.jdk//Contents/Home/jre/lib/jce.jar";
 		
-		String mainJarFile = "/home/xpan/Projects/AndroidDataflow/apps/TestJava.jar";
-		String rtJarLocation = "/home/xpan/Libs/java/jdk1.8.0_101/jre/lib/rt.jar";
-		String jceJarLocation = "/home/xpan/Libs/java/jdk1.8.0_101/jre/lib/jce.jar";
+		//String mainJarFile = "/home/xpan/Projects/AndroidDataflow/apps/TestJava.jar";
+		//String rtJarLocation = "/home/xpan/Libs/java/jdk1.8.0_101/jre/lib/rt.jar";
+		//String jceJarLocation = "/home/xpan/Libs/java/jdk1.8.0_101/jre/lib/jce.jar";
 		
 		classPath = rtJarLocation+ ":"+jceJarLocation+":"+mainJarFile+":"+System.getProperty("java.class.path") ;
 		System.out.println(classPath);
