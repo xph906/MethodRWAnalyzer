@@ -15,6 +15,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import nu.analysis.values.ArrayDataValue;
 import nu.analysis.values.AtomRightValue;
 import nu.analysis.values.CallRetValue;
 import nu.analysis.values.ConstantValue;
@@ -68,23 +69,59 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 	Comparator<Value> ValueComparator = (Value a, Value b) -> {
 	    return a.toString().compareTo(b.toString());
 	};
+	DefAnalysisMap initialValue, prevInitialValue;
+	Set<InstanceFieldValue> initInstanceFieldValue;
+	
 	
 	public IntraProcedureAnalysis(DirectedGraph<Unit> graph, SootMethod m) {
 		super(graph);
 		this.graph = graph;
 		this.method = m;
+		initialValue = new DefAnalysisMap();
+		System.out.println("Analyzing method: "+m.getSignature());
+		for(SootField f : m.getDeclaringClass().getFields()){
+			RightValue ref = null;
+			if(f.isStatic())
+				ref = new StaticFieldValue(f.getDeclaringClass(), f);
+			else{
+				List<SootField> fields = new ArrayList<SootField>();
+				fields.add(f);
+				ref = new InstanceFieldValue(new ThisValue(f.getDeclaringClass()), fields);
+			}
+			
+			initialValue.addNewValue(ref, ref);
+			//initialValue.addNewValue(arrDataKey, null);
+		}
 		doAnalysis();
+	}
+	
+	private DefAnalysisMap genInitAnalysisMap(){
+		DefAnalysisMap initMap = new DefAnalysisMap();
+		for(SootField f : m.getDeclaringClass().getFields()){
+			RightValue ref = null;
+			if(f.isStatic())
+				ref = new StaticFieldValue(f.getDeclaringClass(), f);
+			else{
+				List<SootField> fields = new ArrayList<SootField>();
+				fields.add(f);
+				ref = new InstanceFieldValue(new ThisValue(f.getDeclaringClass()), fields);
+			}
+			
+			initialValue.addNewValue(ref, ref);
+			//initialValue.addNewValue(arrDataKey, null);
+		}
 	}
 
 	@Override
 	protected DefAnalysisMap newInitialFlow() {
-		//System.out.println("NewInitialFlow is called.");
+		System.out.println("NewInitialFlow is called: "+this.method.getSignature());
+		//return (DefAnalysisMap)initialValue.clone();
 		return new DefAnalysisMap();
 	}
 	@Override
 	protected DefAnalysisMap entryInitialFlow() {
-		//System.out.println("EntryInitialFlow is called.");
-		return new DefAnalysisMap();
+		System.out.println("EntryInitialFlow is called: "+this.method.getSignature());
+		return (DefAnalysisMap)initialValue.clone();
 	}
 
 	@Override
@@ -119,22 +156,30 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 			AssignStmt as = (AssignStmt)d;
 			System.out.println("AssignStmt: "+as);
 			
+			boolean removeLeftOps = true;
 			Value rightOp = as.getRightOp();
 			Value leftOp = as.getLeftOp();
-			List<RightValue> leftOps = null;
+			List<RightValue> terminalOps = null;
+			List<ArrayDataValue> arrDataOps = null;
 			if(leftOp instanceof InstanceFieldRef)
-				leftOps = fromInstanceFieldRef2InstanceFieldValue((InstanceFieldRef)leftOp, in);
-			else if(leftOp instanceof ArrayRef)
-				leftOps = fromArrayRef2RightValue((ArrayRef)leftOp, in);
+				terminalOps = fromInstanceFieldRef2InstanceFieldValue((InstanceFieldRef)leftOp, in);
+			else if(leftOp instanceof ArrayRef){
+				arrDataOps = findLeftOpsForArrayRef((ArrayRef)leftOp, in);
+				//TODO: ideally, we need to differentiate numeric index and variable index
+				// for numeric index, we do removeLeftOps, while for numeric index, we don't.
+				//TODO: currently, we will consider this.array as read even if it is just used as
+				// write. Need to think about how to deal with it.
+				//removeLeftOps = false;
+			}
 			else if(leftOp instanceof Ref){
 				if(!(leftOp instanceof StaticFieldRef))
 					System.out.println("  ALERT: leftOp unknown FieldRef: "+leftOp.getClass());
 			}
-			if(leftOps==null )
-				leftOps = new ArrayList<RightValue>();
+			if(terminalOps==null )
+				terminalOps = new ArrayList<RightValue>();
 			
 			out.remove(leftOp); //kill existing one.
-			for(RightValue rv : leftOps)
+			for(RightValue rv : terminalOps)
 				out.remove(rv);
 			
 			RightValue newRightValue = null;
@@ -144,37 +189,53 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 			//this unit.
 			if(as.containsInvokeExpr()){
 				InvokeExpr ie = (InvokeExpr)as.getRightOp();
-				Set<RightValue> values = new HashSet<RightValue>();
+				Set<RightValue> thisArg = null;
 				if(ie instanceof InstanceInvokeExpr){
+					thisArg = new HashSet<RightValue>();
 					InstanceInvokeExpr iie = (InstanceInvokeExpr)ie;
 					Set<RightValue> vs = resolveRightValue(iie.getBase(), in, "InstanceInvokeExpr");
 					for(RightValue v : vs)
-						values.add(v);
+						thisArg.add(v);
 				}
 				else if(ie instanceof DynamicInvokeExpr){
 					System.out.println("DYNAMICINVOKEEXPR ");
 				}
 				System.out.println("  DEBUG: InvokeExpr "+as.getRightOp().getType());
-				
-				//there is no order for arguments.
+
+				CallRetValue crv = new CallRetValue(ie.getMethod());
+				crv.addThisArgSet(thisArg);
+				newRightValue = crv;
 				for(int i=0; i<ie.getArgCount(); i++){
 					Value arg = ie.getArg(i);
 					Set<RightValue> vs = resolveRightValue(arg, in, "InvokeExprArgs");
-					for(RightValue v : vs)
-						values.add(v);
+					crv.addArgSet(i, vs);
 				}
-				newRightValue = new CallRetValue(ie.getMethod(), values);
+				
 				out.setNewValue(leftOp, newRightValue);
-				for(RightValue rv : leftOps)
+				for(RightValue rv : terminalOps)
 					out.setNewValue(rv, newRightValue);
+				//ARRAY
+				if(arrDataOps!=null){
+					for(ArrayDataValue adv : arrDataOps){
+						adv.addData(newRightValue);
+						out.addNewArrayDataValue(adv);
+					}
+				}
 				System.out.println("    DEBUG: InvokeExpr RS:"+newRightValue);
 			}
 			else if(rightOp instanceof AnyNewExpr){
 				System.out.println("  AnyNewExpr.");
 				newRightValue = new NewValue(as);
 				out.setNewValue(leftOp, newRightValue);
-				for(RightValue rv : leftOps)
+				for(RightValue rv : terminalOps)
 					out.setNewValue(rv, newRightValue);
+				//ARRAY
+				if(arrDataOps!=null){
+					for(ArrayDataValue adv : arrDataOps){
+						adv.addData(newRightValue);
+						out.addNewArrayDataValue(adv);
+					}
+				}
 			}
 			else if(rightOp instanceof BinopExpr){
 				System.out.println("  DEBUG: BinopExpr");
@@ -190,9 +251,18 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				for(RightValue rv : values1){
 					System.out.println("  DEBUG: BinopExpr TO:" +leftOp+ " add RV:"+rv+" ");
 					out.addNewValue(leftOp, rv);
-					for(RightValue v2 : leftOps)
+					for(RightValue v2 : terminalOps)
 						out.addNewValue(v2, rv);
+					//ARRAY
+					if(arrDataOps!=null){
+						for(ArrayDataValue adv : arrDataOps){
+							adv.addData(rv);
+							out.addNewArrayDataValue(adv);
+						}
+					}
 				}
+				
+				
 				System.out.println("  DEBUG: BinopExpr RS:"+out.toString());
 			}
 			else if(rightOp instanceof InstanceOfExpr){
@@ -202,22 +272,43 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				System.out.println("  DEBUG: NewArrayExpr");
 				newRightValue = new NewArrayValue(as);
 				out.setNewValue(leftOp, newRightValue);
-				for(RightValue rv : leftOps)
+				for(RightValue rv : terminalOps)
 					out.setNewValue(rv, newRightValue);
+				//ARRAY
+				if(arrDataOps!=null){
+					for(ArrayDataValue adv : arrDataOps){
+						adv.addData(newRightValue);
+						out.addNewArrayDataValue(adv);
+					}
+				}
 			}
 			else if(rightOp instanceof NewExpr){
 				System.out.println("  DEBUG: NewExpr.");
 				newRightValue = new NewValue(as);
 				out.setNewValue(leftOp, newRightValue);
-				for(RightValue rv : leftOps)
+				for(RightValue rv : terminalOps)
 					out.setNewValue(rv, newRightValue);
+				//ARRAY
+				if(arrDataOps!=null){
+					for(ArrayDataValue adv : arrDataOps){
+						adv.addData(newRightValue);
+						out.addNewArrayDataValue(adv);
+					}
+				}
 			}
 			else if(rightOp instanceof NewMultiArrayExpr){
 				System.out.println("  DEBUG: NewMultiArrayExpr.");
 				newRightValue = new NewValue(as);
 				out.setNewValue(leftOp, newRightValue);
-				for(RightValue rv : leftOps)
+				for(RightValue rv : terminalOps)
 					out.setNewValue(rv, newRightValue);
+				//ARRAY
+				if(arrDataOps!=null){
+					for(ArrayDataValue adv : arrDataOps){
+						adv.addData(newRightValue);
+						out.addNewArrayDataValue(adv);
+					}
+				}
 			}
 			else if(rightOp instanceof ShimpleExpr){
 				System.out.println("  DEBUG: ShimpleExpr do nothing.");
@@ -232,8 +323,15 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				}
 				for(RightValue rv : values){
 					out.addNewValue(leftOp, rv);
-					for(RightValue v2 : leftOps)
+					for(RightValue v2 : terminalOps)
 						out.addNewValue(v2, rv);
+					//ARRAY
+					if(arrDataOps!=null){
+						for(ArrayDataValue adv : arrDataOps){
+							adv.addData(rv);
+							out.addNewArrayDataValue(adv);
+						}
+					}
 				}
 			}
 			else if(rightOp instanceof CastExpr){
@@ -246,16 +344,31 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				}
 				for(RightValue rv : values){
 					out.addNewValue(leftOp, rv);
-					for(RightValue v2 : leftOps)
+					for(RightValue v2 : terminalOps)
 						out.addNewValue(v2, rv);
+					
+					//ARRAY
+					if(arrDataOps!=null){
+						for(ArrayDataValue adv : arrDataOps){
+							adv.addData(rv);
+							out.addNewArrayDataValue(adv);
+						}
+					}
 				}
 			}
 			else if(rightOp instanceof Constant){
 				System.out.println("  DEBUG: Constant");
 				newRightValue = new ConstantValue(rightOp);
 				out.setNewValue(leftOp, newRightValue);
-				for(RightValue rv : leftOps)
+				for(RightValue rv : terminalOps)
 					out.setNewValue(rv, newRightValue);
+				//ARRAY
+				if(arrDataOps!=null){
+					for(ArrayDataValue adv : arrDataOps){
+						adv.addData(newRightValue);
+						out.addNewArrayDataValue(adv);
+					}
+				}
 			}
 			else if((rightOp instanceof Local)           ||
 					(rightOp instanceof ArrayRef)        ||
@@ -266,8 +379,15 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				for(RightValue rv : values){
 					System.out.println("  DEBUG: "+rightOp.getClass()+" RS:"+rv);
 					out.addNewValue(leftOp, rv);
-					for(RightValue v2 : leftOps)
+					for(RightValue v2 : terminalOps)
 						out.addNewValue(v2, rv);
+					//ARRAY
+					if(arrDataOps!=null){
+						for(ArrayDataValue adv : arrDataOps){
+							adv.addData(rv);
+							out.addNewArrayDataValue(adv);
+						}
+					}
 				}
 			}
 			else if(rightOp instanceof ThisRef){
@@ -283,36 +403,38 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		else if(d instanceof InvokeStmt){
 			InvokeStmt is = (InvokeStmt)d;
 			if(is.getInvokeExpr().getMethod().isConstructor()){
+				//TODO: what if a.b = new CLS(arg);
+				//TODO: what if $a.init, but $a is an arrayRef
 				System.out.println("InvokeStmt constructor: "+is);
 				if(is.getInvokeExpr() instanceof InstanceInvokeExpr){
 					InstanceInvokeExpr iie = (InstanceInvokeExpr)is.getInvokeExpr();
-					Set<RightValue> values = in.get(iie.getBase());
+					Set<RightValue> values = out.get(iie.getBase());
 					if(values == null){
 						System.err.println("error: cannot find constructor's base.");
 					}
 					else{
 						boolean replace = false;
-						Set<RightValue> args = new HashSet<RightValue>();
+						Set<RightValue> thisArg = new HashSet<RightValue>();
+						CallRetValue crv = new CallRetValue(iie.getMethod());
+						crv.addThisArgSet(thisArg);
 						List<NewValue> deleted = new ArrayList(2);
 						for(RightValue v : values){
+							thisArg.add((RightValue)v.clone());
 							if (v instanceof NewValue){
-								for(int i=0; i<iie.getArgCount(); i++){
-									replace = true;
-									deleted.add((NewValue)v);
-									Value arg = iie.getArg(i);
-									Set<RightValue> vs = resolveRightValue(arg, in, "ConstructorInvokeExprArgs");
-									for(RightValue vv : vs){
-										args.add(vv);
-										System.out.println("  DEBUG: constructorArg RS:"+vv);
-									}
-								}
+								replace = true;
+								deleted.add((NewValue)v);
 							}
 						}
+						
+						for(int i=0; i<iie.getArgCount(); i++){
+							Value arg = iie.getArg(i);
+							Set<RightValue> vs = resolveRightValue(arg, in, "ConstructorInvokeExprArgs");
+							crv.addArgSet(i, vs);
+						}
+						
+						Value leftOp = iie.getBase();
+						out.addNewValue(leftOp, crv);
 						if(replace){
-							RightValue crv = new CallRetValue(is.getInvokeExpr().getMethod(), args);
-							Value leftOp = iie.getBase();
-							out.addNewValue(leftOp, crv);
-							int c1 = out.get(leftOp).size();
 							Iterator<RightValue> it = out.get(leftOp).iterator();
 							while(it.hasNext()){
 								RightValue rv = it.next();
@@ -321,10 +443,9 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 								else{
 									System.out.println("NOTMATCH"+rv+" "+deleted.iterator().next());
 								}
-								
 							}
-							System.out.println("Deleted a NewValue: "+c1+" "+out.get(leftOp).size());
 						}
+						
 					}
 				}
 				
@@ -335,15 +456,16 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 	@Override
 	protected void merge(DefAnalysisMap in1, DefAnalysisMap in2,
 			DefAnalysisMap out) {
-		//TODO: 
-		//in1.contains(X.f1) 
-		//!in2.contains(X.f1) && in2.values.contains(X.f1)
-		//out[X.f1] = [in1.contains(X.f1)  + X.f1].
 		out.clear();
+		
 		for(Value k : in1.keyValueSet()){
-			for(RightValue v : in1.get(k))
-				out.addNewValue(k, v);
-			if(!in2.keyValueSet().contains(k)){
+			for(RightValue v : in1.get(k)){
+				if(k instanceof ArrayDataValue)
+					out.addNewArrayDataValue((ArrayDataValue)v);
+				else
+					out.addNewValue(k, v);
+			}
+			/*if(!in2.keyValueSet().contains(k)){
 				if(k instanceof ArrayRef){
 					List<RightValue> tmp = fromArrayRef2RightValue((ArrayRef)k, in2);
 					if(tmp == null)
@@ -372,12 +494,18 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				else{
 					out.addNewValue(k, new UndefinedValue(k));
 				}
-			}
+			}*/
 		}
 		for(Value k : in2.keyValueSet()){
-			for(RightValue v : in2.get(k))
-				out.addNewValue(k, v);
-			if(!in1.keyValueSet().contains(k)){
+			for(RightValue v : in2.get(k)){
+				if(k instanceof ArrayDataValue)
+					out.addNewArrayDataValue((ArrayDataValue)v);
+				else
+					out.addNewValue(k, v);
+			}
+			
+			
+			/*if(!in1.keyValueSet().contains(k)){
 				if(k instanceof ArrayRef){
 					List<RightValue> tmp = fromArrayRef2RightValue((ArrayRef)k, in1);
 					if(tmp == null)
@@ -406,7 +534,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				else{
 					out.addNewValue(k, new UndefinedValue(k));
 				}
-			}
+			}*/
 		}
 	}
 	
@@ -430,104 +558,12 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		dest.clear();
 		
 		for(Value k : source.getId2Value().values()){
+			//System.err.println("COPY: VALUE: "+k+" C:"+source.containsKey(k));
 			dest.addNewValueSet(k, source.get(k));
 		}
 	}
-
-	/*
-	private Set<Value> findRightRefValueDef(Value arg, DefAnalysisMap in){
-		if(in.containsKey(arg))
-			return in.get(arg);
-		
-		Set<Value> rs = new HashSet<Value>();
-		
-		if(arg instanceof ArrayRef){
-			//ArrayRef returns the base Value
-			System.out.println("  ArrayRef");
-			ArrayRef ar = (ArrayRef)arg;
-			Value b = ar.getBase();
-			if(in.containsKey(b))
-				return in.get(b);
-			else
-				System.out.println("  DEBUG: findRightValue 1 cannot find right ref.");
-		}
-		else if(arg instanceof InstanceFieldRef){
-			InstanceFieldRef ir = (InstanceFieldRef)arg;
-			Value b = ir.getBase();
-			if(in.containsKey(b)){
-				for(Value v : in.get(b)){
-					Value nn = new InstanceFieldValue(v, ir.getField());
-					if(in.containsKey(nn)){
-						rs.addAll(in.get(nn));
-						System.out.println("  DEBUG: findRightValue 2 instanceFiledRef right: in.containsKey. Add:"+in.get(nn).size());
-					}
-					else{
-						rs.add(nn);
-						System.out.println("  DEBUG: findRightValue 3 instanceFiledRef right: in not containsKey. Add:"+nn);
-					}
-				}
-			}
-			else if(b instanceof ThisValue || b instanceof ParamValue){
-				Value tmp = new InstanceFieldValue(b, ir.getField());
-				rs.add(tmp);
-				System.out.println("  DEBUG: findRightValue 4 base not in, but is this or param."+tmp);
-			}
-			Value newKey = new InstanceFieldValue(ir.getBase(), ir.getField());
-		}
-		else if(arg instanceof StaticFieldRef){
-			StaticFieldRef sr = (StaticFieldRef)arg;
-			return new StaticFieldValue(sr.getField().getDeclaringClass(), sr.getField());
-		}
-		else if(arg instanceof ThisRef){
-			System.out.println("  ThisRef: ALERT:"+arg+" shouldn't be here");
-		}
-		else if(arg instanceof ParameterRef){
-			System.out.println("  ParameterRef: ALERT:"+" should't be here");
-		}
-		
-		return rs;
-	}
-	private List<Value> processLeftRefValue(Value leftOp,  DefAnalysisMap in){
-		List<Value> leftOpRefs = new ArrayList<Value>();
-		if(leftOp instanceof ArrayRef){
-			//for ArrayRef, we don't remove its base defs.
-			ArrayRef lar = (ArrayRef)leftOp;
-			if(in.containsKey(lar.getBase())){
-				leftOpRefs.addAll(in.get(lar.getBase()));
-				System.out.println("  DEBUG: ArrayRef find base refs:"+in.get(lar.getBase()));
-			}
-			else
-				System.out.println("  DEBUG: ArrayRef cannot find base defs.");
-		}
-		else if(leftOp instanceof InstanceFieldRef){
-			InstanceFieldRef ifr = (InstanceFieldRef)leftOp;
-			if(in.containsKey(ifr.getBase())){
-				System.out.println("  DEBUG InstanceRef find base refs:"+in.get(ifr.getBase()).size());
-				for(Value v : in.get(ifr.getBase())){
-					Value refKey = new InstanceFieldValue(v, ifr.getField());
-					leftOpRefs.add(refKey);
-				}
-			}
-			else{
-				System.out.println("  DEBUG InstanceRef cannot find base refs:"+ifr.getBase());
-			}
-		}
-		else if(leftOp instanceof StaticFieldRef){	
-			StaticFieldRef srf = (StaticFieldRef)leftOp;
-			Value refKey = new StaticFieldValue(srf.getField().getDeclaringClass(), srf.getField());
-			leftOpRefs.add(refKey);
-			System.out.println("  DEBUG StaticFieldRef found:"+refKey);
-		}
-		return leftOpRefs;
-	}
-	*/
 	
-	private List<RightValue> fromArrayRef2RightValue(ArrayRef a, DefAnalysisMap in){
-		List<RightValue> rs = new ArrayList<RightValue>();
-		if(in.containsKey(a.getBase()))
-			return new ArrayList<RightValue>(in.get(a.getBase()));
-		return rs;
-	}
+	
 	
 	//mapping 1 -> n
 	//Results List<instanceFieldValue>
@@ -572,45 +608,85 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		return rs;
 	}
 	
-	/*private Value findKeyFromInSet(DefAnalysisMap in, Value arg){
-		if(in.containsKey(arg))
-			return arg;
-		else {
-			int hash = arg.equivHashCode();
-			for(Value v : in.keySet()){
-				if(hash == v.equivHashCode())
-					return v;
+	//This function returns a list of ArrayDataValue to be updated for ArrayRef assignment.
+	private List<ArrayDataValue> findLeftOpsForArrayRef(ArrayRef a, DefAnalysisMap in){
+		List<ArrayDataValue> rs = new ArrayList<ArrayDataValue>();
+		if(in.containsKey(a.getBase())){
+			for(RightValue v : in.get(a.getBase())){
+				ArrayDataValue adv = in.findArrayDataValueFromBase(v);
+				if (adv==null){
+					System.out.println("ALERT: cannot find ArrayDataValue for: "+v);
+					adv = new ArrayDataValue(v);
+				}
+				rs.add(adv);
 			}
 		}
-		return null;
-	}*/
+		return rs;
+	}
+	
+	//This function find all ArrayRef's values.
+	private Set<RightValue> resolveArrayRefRightValue(ArrayRef ar, DefAnalysisMap in){
+		Set<RightValue> rs = new HashSet<RightValue>();
+		
+		Value rv = ar.getBase();
+		Set<RightValue> baseSet = in.get(rv);
+		if(baseSet == null)
+			return rs;
+		
+		for(RightValue base : baseSet){
+			ArrayDataValue adv = in.findArrayDataValueFromBase(base);
+			if(adv == null){
+				System.out.println("ALERT: Cannot find ARRVAL for base: "+base+". add base!");
+				//TODO: if cannot find array data, use its base. Think about this design.
+				rs.add(base);
+			}
+			else{
+				for(RightValue v : adv.getData()){
+					rs.add(v);
+				}
+			}
+		}
+		return rs;
+	}
 	
 	private Set<RightValue> resolveRightValue(Value arg,  DefAnalysisMap in, String msg){
 		Set<RightValue> values = new HashSet<RightValue>();
-		System.out.println("YYY "+arg);
+		//System.out.println("YYY "+arg);
 		if(arg instanceof Constant){
 			values.add(new ConstantValue(arg));
 		}
-		else if(in.containsKey(arg)){
-			System.out.println("  YYY1 "+arg);
+		else if(!(arg instanceof Ref) && in.containsKey(arg)){
+			//System.out.println("  YYY1 "+arg);
+			List<RightValue> tmp = new ArrayList<RightValue>(in.get(arg));
+			Collections.sort(tmp, ValueComparator);
+			for(RightValue v : tmp)
+				values.add(v);
+		}
+		else if((arg instanceof ArrayRef) && in.containsKey(arg)){
+			//TODO: maybe we can remove this branch?
 			List<RightValue> tmp = new ArrayList<RightValue>(in.get(arg));
 			Collections.sort(tmp, ValueComparator);
 			for(RightValue v : tmp)
 				values.add(v);
 		}
 		else if(arg instanceof Ref){
-			//note that at this point, we cannot find original value from in.
-			System.out.println("  YYY2 "+arg);
+			/*System.out.println("  YYY2 "+arg);
 			for(Value kkk : in.keyValueSet()){
 				System.out.println("  KKK:"+kkk);
-			}
+			}*/
 			//System.out.println("  MMM:"+(findKeyFromInSet(in, arg)));
 			System.out.println("  DEBUG: "+msg+" do base searching for ref value: "+arg);
 			if(arg instanceof ArrayRef){
 				ArrayRef arrRef = (ArrayRef)arg;
-				List<RightValue> tmp = fromArrayRef2RightValue(arrRef, in);
-				System.out.println("    DEBUG:  ArrayRef: found "+tmp.size()+" base values.");
-				for(RightValue rv : tmp){
+				Set<RightValue> tmp = resolveArrayRefRightValue(arrRef, in);
+				if (tmp==null){
+					System.out.println("ALERT: cannot resolve array: "+arrRef+" from "+in);
+					values = new HashSet<RightValue>();
+				}
+				else
+					values = tmp;
+				//System.out.println("    DEBUG:  ArrayRef: found "+tmp.size()+" base values.");
+				/*for(RightValue rv : tmp){
 					if(in.containsKey(rv)){
 						for(RightValue v : in.get(rv)){
 							System.out.println("      Found source:"+v);
@@ -621,7 +697,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 						System.out.println("      Not found source, add new rightValue: "+rv);
 						values.add(rv);
 					}
-				}
+				}*/
 			}
 			else if(arg instanceof InstanceFieldRef){
 				InstanceFieldRef ifr = (InstanceFieldRef)arg;

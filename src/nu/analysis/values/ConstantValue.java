@@ -7,7 +7,7 @@ import soot.Value;
 import soot.jimple.Constant;
 import soot.util.Switch;
 
-public class ConstantValue extends RightValue {
+public class ConstantValue extends AtomRightValue {
 	Value originalValue;
 	public ConstantValue(Value v){
 		originalValue = v;

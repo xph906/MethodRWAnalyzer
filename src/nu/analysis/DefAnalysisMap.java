@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import nu.analysis.values.ArrayDataValue;
 import nu.analysis.values.RightValue;
 import soot.Value;
 
@@ -24,14 +25,21 @@ public class DefAnalysisMap implements Map<Integer, Set<RightValue>> {
 	Comparator<Value> ValueComparator = (Value a, Value b) -> {
 	    return a.toString().compareTo(b.toString());
 	};
+	ArrayDataValue arrDataKey = new ArrayDataValue(null);
 	
 	public DefAnalysisMap(){
 		map = new HashMap<Integer, Set<RightValue>>();
 		id2Value = new HashMap<Integer, Value>();
 	}
 	
+	public ArrayDataValue getArrDataKey(){
+		assert(arrDataKey.equals(new ArrayDataValue(null)) );
+		return arrDataKey;
+	}
+	
 	public void addNewValue(Value key, RightValue value){
 		Integer id = key.equivHashCode();
+		
 		if(map.containsKey(id)){
 			map.get(id).add(value);
 		}
@@ -41,6 +49,7 @@ public class DefAnalysisMap implements Map<Integer, Set<RightValue>> {
 			map.put(id, l);
 			id2Value.put(id, key);
 		}
+		assert(id2Value.size() == map.size());
 	}
 	public void addNewValueSet(Value key, Set<RightValue> values){
 		Integer id = key.equivHashCode();
@@ -53,6 +62,7 @@ public class DefAnalysisMap implements Map<Integer, Set<RightValue>> {
 			map.put(id, l);
 			id2Value.put(id, key);
 		}
+		assert(id2Value.size() == map.size());
 	}
 	//kill existing one, if any.
 	public void setNewValue(Value key, RightValue value){
@@ -61,6 +71,7 @@ public class DefAnalysisMap implements Map<Integer, Set<RightValue>> {
 		l.add(value);
 		map.put(id, l);
 		id2Value.put(id, key);
+		assert(id2Value.size() == map.size());
 	}
 
 	@Override
@@ -75,17 +86,10 @@ public class DefAnalysisMap implements Map<Integer, Set<RightValue>> {
 
 	@Override
 	public boolean containsKey(Object key) {
-		if(key instanceof Value){
-			Integer id = ((Value)key).equivHashCode();
-			if(map.containsKey(id))
-				return true;
-		}
-		else if(key instanceof Integer){
-			return map.containsKey((Integer)key);
-		}
-		else{
-			System.out.println("error: containsKey object is not Value: "+key.getClass());
-		}
+		assert(key instanceof Value);
+		Integer id = ((Value)key).equivHashCode();
+		if(map.containsKey(id))
+			return true;
 		return false;
 	}
 
@@ -105,6 +109,7 @@ public class DefAnalysisMap implements Map<Integer, Set<RightValue>> {
 
 	@Override
 	public Set<RightValue> get(Object key) {
+		assert(key instanceof Value);
 		Integer id = ((Value)key).equivHashCode();
 		return map.get(id);
 	}
@@ -112,42 +117,92 @@ public class DefAnalysisMap implements Map<Integer, Set<RightValue>> {
 	public Set<RightValue> put(Value key, Set<RightValue> value) {
 		Integer id = key.equivHashCode();
 		id2Value.put(id, key);
-		return map.put(id, value);
+		Set<RightValue> rs = map.put(id, value);
+		
+		assert(id2Value.size() == map.size());
+		return rs;
+		
 	}
 	
 	@Override
 	public Set<RightValue> put(Integer key, Set<RightValue> value) {
+		//shouldn't use this method
+		assert(id2Value.containsKey(key));
 		return map.put(key, value);
 	}
 
 	@Override
 	public Set<RightValue> remove(Object key) {
-		if(key instanceof Value){
-			Integer id = ((Value)key).equivHashCode();
-			return map.remove(id);
-		}
-		return null;
+		assert(key instanceof Value);
+		Integer id = ((Value)key).equivHashCode();
+		Set<RightValue> rs = map.remove(id);
+		id2Value.remove(id);
+		return rs;
 	}
 
 	@Override
 	public void putAll(Map<? extends Integer, ? extends Set<RightValue>> m) {
-		map.putAll(m);
-		
+		//shouldn't use this method.
+		//TODO: figure out a way to conceal this method.
+		assert(1 == 2);
 	}
 
 	@Override
 	public void clear() {
 		map.clear();
+		id2Value.clear();
 	}
 
 	@Override
 	public Set<Integer> keySet() {
 		//THIS FUNCTION IS DISABLED because it's easy to get confused with keyValueSet()
+		//TODO: figure out a way to conceal this method.
+		assert(1 == 2);
 		return null;
 	}
 	
 	public HashSet<Value> keyValueSet() {
 		return new HashSet<Value>(id2Value.values());
+	}
+	
+	public ArrayDataValue findArrayDataValueFromBase(RightValue base){
+		Set<RightValue> rs = get(arrDataKey);
+		if(rs == null)
+			return null;
+		else{
+			for(RightValue v : rs){
+				ArrayDataValue av = (ArrayDataValue)v;
+				if(av.getBase().equals(base))
+					return av;
+			}
+		}
+		return null;
+	}
+	
+	public Set<RightValue> getAllArrayDataValue(){
+		return get(arrDataKey);
+	}
+	
+	public void addNewArrayDataValue(ArrayDataValue adv){
+		Set<RightValue> advs = get(arrDataKey);
+		if(advs == null)
+			setNewValue(arrDataKey, adv);
+		else{
+			for(RightValue rv : advs){
+				ArrayDataValue a = (ArrayDataValue)rv;
+				if(a.getBase().equals(adv.getBase())){
+					assert(adv.getData().size() >= a.getData().size());
+					//System.out.println("BASEVS1: "+a.getBase()+" VS "+adv.getBase());
+					a.setData(adv.getData());
+					return;
+				}
+				else{
+					//System.out.println("BASEVS2: "+a.getBase()+" VS "+adv.getBase());
+				}
+			}
+			addNewValue(arrDataKey, adv);
+		}
+		
 	}
 
 	@Override
@@ -167,15 +222,15 @@ public class DefAnalysisMap implements Map<Integer, Set<RightValue>> {
 		if(! (right instanceof DefAnalysisMap))
 			return false;
 		DefAnalysisMap rightMap = (DefAnalysisMap)right;
-		if(map.keySet().size() != rightMap.keySet().size())
+		if(keyValueSet().size() != rightMap.keyValueSet().size())
 			return false;
-		for(Integer id : map.keySet()){
-			if(!rightMap.containsKey(id))
+		for(Value key : keyValueSet()){
+			if(!rightMap.containsKey(key))
 				return false;
-			if(map.get(id).size() != rightMap.get(id).size())
+			if(get(key).size() != rightMap.get(key).size())
 				return false;
-			Set<RightValue> rightValues = rightMap.get(id); 
-			for(RightValue v : map.get(id)){
+			Set<RightValue> rightValues = rightMap.get(key); 
+			for(RightValue v : get(key)){
 				if(! rightValues.contains(v))
 					return false;
 			}
