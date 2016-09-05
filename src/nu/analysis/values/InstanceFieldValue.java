@@ -27,6 +27,11 @@ public class InstanceFieldValue extends RightValue {
 	public List<SootField> getFields(){
 		return fields;
 	}
+	public boolean isThisReference(){
+		if(base instanceof ThisValue)
+			return true;
+		return false;
+	}
 	
 	@Override
 	public void apply(Switch sw) {

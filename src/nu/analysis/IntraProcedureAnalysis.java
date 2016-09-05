@@ -1,6 +1,7 @@
 package nu.analysis;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -60,7 +61,12 @@ import soot.shimple.ShimpleExpr;
 import soot.toolkits.graph.DirectedGraph;
 import soot.toolkits.scalar.ForwardFlowAnalysis;
 
-//find variable defs.
+//TODO: not handling the scenario that data get modified via function call.
+//For example, considering analyzing the input of method A, which will call method B. 
+//Method B will modify several fields and the parameters passed into it,
+//Therefore, the analysis results of A should include those changes made by method B.
+//TODO: for ArrayRef, it will be labeled as READ even if it's completely rewritten in 
+//the begining.
 public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysisMap>{
 	DirectedGraph<Unit> graph = null;
 	Pattern thisPattern = Pattern.compile("^@this:");
@@ -70,16 +76,16 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 	    return a.toString().compareTo(b.toString());
 	};
 	DefAnalysisMap initialValue, prevInitialValue;
-	Set<InstanceFieldValue> initInstanceFieldValue;
-	
+	Set<RightValue> relatedFields, newRelatedFields;
+	Set<RightValue> readFields, writeFields;
 	
 	public IntraProcedureAnalysis(DirectedGraph<Unit> graph, SootMethod m) {
 		super(graph);
 		this.graph = graph;
 		this.method = m;
-		initialValue = new DefAnalysisMap();
+		//initialValue = new DefAnalysisMap();
 		System.out.println("Analyzing method: "+m.getSignature());
-		for(SootField f : m.getDeclaringClass().getFields()){
+		/*for(SootField f : m.getDeclaringClass().getFields()){
 			RightValue ref = null;
 			if(f.isStatic())
 				ref = new StaticFieldValue(f.getDeclaringClass(), f);
@@ -92,11 +98,124 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 			initialValue.addNewValue(ref, ref);
 			//initialValue.addNewValue(arrDataKey, null);
 		}
-		doAnalysis();
+		
+		prevInitialValue = initialValue;*/
+		relatedFields = getInitalRelatedFields(m);
+		initialValue = genInitialDefAnalysisMapFromFields(relatedFields);
+		//backup
+		newRelatedFields = new HashSet<RightValue>();
+		for(RightValue rv : relatedFields)
+			newRelatedFields.add(rv);
+		boolean repeat = false;
+		int count = 0;
+		do{
+			repeat = false;
+			doAnalysis();
+			if(newRelatedFields.size() != relatedFields.size()){
+				System.out.println("ALERT: new fields: "+newRelatedFields.size()+" vs "+relatedFields.size());
+				for(RightValue rv : newRelatedFields)
+					relatedFields.add(rv);
+				initialValue = genInitialDefAnalysisMapFromFields(relatedFields);
+				repeat = true;
+			}
+			count++;
+		}while(repeat && count<10);
+		if(count >= 10){
+			System.out.println("error: method: "+m+" has converage issue!");
+		}
+		analyzeReadWriteFields();
+		analyzeRetValue();
 	}
 	
-	private DefAnalysisMap genInitAnalysisMap(){
-		DefAnalysisMap initMap = new DefAnalysisMap();
+	public void analyzeRetValue(){
+		for(Unit u: this.graph.getTails()){
+			System.out.println("RET: "+u+" ["+method+"]");
+		}
+	}
+	
+	public Set<RightValue> getReadFields() {
+		return readFields;
+	}
+
+	public Set<RightValue> getWriteFields() {
+		return writeFields;
+	}
+
+	public void analyzeReadWriteFields(){
+		readFields = new HashSet<RightValue>();
+		writeFields = new HashSet<RightValue>();
+		Iterator<Unit> it = this.graph.iterator();
+		while(it.hasNext()){
+			Unit unit = it.next();
+			DefAnalysisMap dam = this.getFlowAfter(unit);
+			Collection<Value> keys = dam.getId2Value().values();
+			for(Value k : keys){
+				Set<RightValue> values = dam.get(k);
+				
+				//ignore those put by ourselves.
+				if(k instanceof InstanceFieldValue){
+					if(values.size()==1){
+						RightValue rv = values.iterator().next();
+						if(rv instanceof InstanceFieldValue && rv.equals(k)){
+							System.out.println("DEBUG: prestored InstanceFiedlValue: "+k+" VS "+rv);
+							continue;
+						}
+					}
+					writeFields.add((InstanceFieldValue)k);
+				}
+				else if(k instanceof StaticFieldValue){
+					if(values.size()==1){
+						RightValue rv = values.iterator().next();
+						if(rv instanceof StaticFieldValue && rv.equals(k)){
+							System.out.println("DEBUG: prestored StaticFieldValue: "+k+" VS "+rv);
+							continue;
+						}
+					}
+					writeFields.add((StaticFieldValue)k);
+				}
+				
+				for(RightValue v : values){
+					if(v instanceof InstanceFieldValue){
+						readFields.add((InstanceFieldValue)v);
+					}
+					else if(v instanceof StaticFieldValue){
+						readFields.add((StaticFieldValue)v);
+					}
+					else if(v instanceof CallRetValue){
+						CallRetValue crv = (CallRetValue)v;
+						Set<RightValue> args = crv.getThisArgs();
+						if(args != null){
+							for(RightValue rv : args){
+								if(rv instanceof InstanceFieldValue || rv instanceof StaticFieldValue)
+									readFields.add(rv);
+							}
+						}
+						for(int i=0; i<crv.getArgCount(); i++){
+							args = crv.getArgs(i);
+							if(args != null){
+								for(RightValue rv : args)
+									if(rv instanceof InstanceFieldValue || rv instanceof StaticFieldValue)
+										readFields.add(rv);
+							}
+						}
+					}
+					else if(v instanceof ArrayDataValue){
+						ArrayDataValue adv = (ArrayDataValue)v;
+						RightValue base = adv.getBase();
+						if(base instanceof InstanceFieldValue || base instanceof StaticFieldValue)
+							writeFields.add(base);
+						for(RightValue rv : adv.getData()){
+							if(rv instanceof InstanceFieldValue || rv instanceof StaticFieldValue)
+								readFields.add(rv);
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	private Set<RightValue> getInitalRelatedFields(  SootMethod m){
+		Set<RightValue> relatedFields = new  HashSet<RightValue>();
 		for(SootField f : m.getDeclaringClass().getFields()){
 			RightValue ref = null;
 			if(f.isStatic())
@@ -106,17 +225,24 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				fields.add(f);
 				ref = new InstanceFieldValue(new ThisValue(f.getDeclaringClass()), fields);
 			}
-			
-			initialValue.addNewValue(ref, ref);
-			//initialValue.addNewValue(arrDataKey, null);
+			relatedFields.add(ref);
 		}
+		System.out.println("DEBUG getInitalRelatedFields gen "+relatedFields.size()+" fields");
+		return relatedFields;
+	}
+	private DefAnalysisMap genInitialDefAnalysisMapFromFields(Set<RightValue> relatedFields){
+		DefAnalysisMap dam = new DefAnalysisMap();
+		for(RightValue rv : relatedFields){
+			dam.setNewValue(rv, rv);
+		}
+		return dam;
 	}
 
 	@Override
 	protected DefAnalysisMap newInitialFlow() {
 		System.out.println("NewInitialFlow is called: "+this.method.getSignature());
-		//return (DefAnalysisMap)initialValue.clone();
-		return new DefAnalysisMap();
+		return (DefAnalysisMap)initialValue.clone();
+		//return new DefAnalysisMap();
 	}
 	@Override
 	protected DefAnalysisMap entryInitialFlow() {
@@ -181,6 +307,27 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 			out.remove(leftOp); //kill existing one.
 			for(RightValue rv : terminalOps)
 				out.remove(rv);
+			
+			if(leftOp instanceof InstanceFieldValue ){
+				InstanceFieldValue ifv = (InstanceFieldValue)leftOp;
+				if(ifv.isThisReference())
+					newRelatedFields.add(ifv);
+			}
+			if(leftOp instanceof StaticFieldValue){
+				StaticFieldValue sfv = (StaticFieldValue)leftOp;
+				newRelatedFields.add(sfv);
+			}
+			for(RightValue rv : terminalOps){
+				if(rv instanceof InstanceFieldValue ){
+					InstanceFieldValue ifv = (InstanceFieldValue)rv;
+					if(ifv.isThisReference())
+						newRelatedFields.add(ifv);
+				}
+				if(rv instanceof StaticFieldValue){
+					StaticFieldValue sfv = (StaticFieldValue)rv;
+					newRelatedFields.add(sfv);
+				}
+			}
 			
 			RightValue newRightValue = null;
 			//it is guaranteed that the IN set contains the top value.

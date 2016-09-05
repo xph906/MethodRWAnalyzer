@@ -28,6 +28,7 @@ public class CallRetValue extends RightValue  {
 	Set<RightValue> thisArg;
 	String cls;
 	
+	//Args can only be AtomRightValue(including StaticFieldValue) or InstanceFieldValue
 	public CallRetValue(SootMethod m){
 		this.method = m;
 		this.args = new Set[m.getParameterCount()];
@@ -61,6 +62,8 @@ public class CallRetValue extends RightValue  {
 		}
 		args[index] = newArgSet;
 	}
+	
+	//
 	public void addThisArgSet(Set<RightValue> argSet){
 		//this.thisArg = argSet;
 		if(argSet==null)

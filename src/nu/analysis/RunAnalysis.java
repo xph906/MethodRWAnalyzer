@@ -1,9 +1,12 @@
 package nu.analysis;
 
 import java.io.PrintWriter;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 
+import nu.analysis.values.RightValue;
 import soot.Body;
 import soot.BodyTransformer;
 import soot.G;
@@ -62,6 +65,9 @@ public class RunAnalysis {
 				"-f", "none" 
 		};
 		
+		Map<SootMethod, Set<RightValue>> methodReadParam = new HashMap<SootMethod, Set<RightValue>>();
+		Map<SootMethod, Set<RightValue>> methodWriteParam = new HashMap<SootMethod, Set<RightValue>>();
+		
 		PackManager.v().getPack("jtp").add(
 			    new Transform("jtp.myTransform", new BodyTransformer() {
 			   
@@ -75,6 +81,13 @@ public class RunAnalysis {
 							out.println("@@Start analyzing:"+b.getMethod().getName());
 							UnitGraph g = new ExceptionalUnitGraph(b);
 							IntraProcedureAnalysis analysis = new IntraProcedureAnalysis(g, b.getMethod());
+							Set<RightValue> readFields = analysis.getReadFields();
+							Set<RightValue> writeFields = analysis.getWriteFields();
+							for(RightValue rf : readFields)
+								out.println("READ: "+rf);
+							for(RightValue wf : writeFields)
+								out.println("WRITE: "+wf);
+							
 							out.println("  --Done analyzing:"+b.getMethod().getName()+" "+b);
 							out.println("  --Method Body:"+b);
 							out.println("  --Start displaying:"+b.getMethod().getName()+" ");
