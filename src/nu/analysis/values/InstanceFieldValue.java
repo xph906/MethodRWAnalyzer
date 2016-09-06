@@ -24,6 +24,9 @@ public class InstanceFieldValue extends RightValue {
 	public AtomRightValue getBase(){
 		return base;
 	}
+	public void setBase(AtomRightValue b){
+		this.base = b;
+	}
 	public List<SootField> getFields(){
 		return fields;
 	}

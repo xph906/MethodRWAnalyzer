@@ -6,7 +6,13 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
+import nu.analysis.values.AtomRightValue;
+import nu.analysis.values.CallRetValue;
+import nu.analysis.values.InstanceFieldValue;
+import nu.analysis.values.ParamValue;
 import nu.analysis.values.RightValue;
+import nu.analysis.values.StaticFieldValue;
+import nu.analysis.values.ThisValue;
 import soot.Body;
 import soot.BodyTransformer;
 import soot.G;
@@ -67,7 +73,7 @@ public class RunAnalysis {
 		
 		Map<SootMethod, Set<RightValue>> methodReadParam = new HashMap<SootMethod, Set<RightValue>>();
 		Map<SootMethod, Set<RightValue>> methodWriteParam = new HashMap<SootMethod, Set<RightValue>>();
-		
+		Map<SootMethod, IntraProcedureAnalysis> results = new HashMap<SootMethod, IntraProcedureAnalysis>();
 		PackManager.v().getPack("jtp").add(
 			    new Transform("jtp.myTransform", new BodyTransformer() {
 			   
@@ -81,6 +87,8 @@ public class RunAnalysis {
 							out.println("@@Start analyzing:"+b.getMethod().getName());
 							UnitGraph g = new ExceptionalUnitGraph(b);
 							IntraProcedureAnalysis analysis = new IntraProcedureAnalysis(g, b.getMethod());
+							results.put(b.getMethod(), analysis);
+							
 							Set<RightValue> readFields = analysis.getReadFields();
 							Set<RightValue> writeFields = analysis.getWriteFields();
 							for(RightValue rf : readFields)
@@ -113,6 +121,9 @@ public class RunAnalysis {
 				
 			    }));
 		
+		
+		
+		
 		Main.v().main(sootArgs);
 		for (QueueReader<MethodOrMethodContext> rdr =
 				Scene.v().getReachableMethods().listener(); rdr.hasNext(); ) {
@@ -121,39 +132,206 @@ public class RunAnalysis {
 				System.out.println("METHOD: "+method.getActiveBody());
 			}
 		}
-		//Scene.v().loadClassAndSupport("TestJava");
-		/*---------------------------------------------------------*/
 		
-		//IntraProcedureAnalysis cgt = new IntraProcedureAnalysis();
-		//PackManager.v().getPack("jtp").add(new Transform("jtp.nt", cgt));
-		/*Main m = Main.v();
-		m.processCmdLine(sootArgs);
-		m.autoSetOptions();
-		Scene.v().loadNecessaryClasses();
-		
-		
-		for (QueueReader<MethodOrMethodContext> rdr =
-				Scene.v().getReachableMethods().listener(); rdr.hasNext(); ) {
-			SootMethod method = rdr.next().method();
-			System.out.println("Method: "+method.getName()+" "+method.getDeclaringClass().getName()+" "+method.hasActiveBody());
-			if(!method.hasActiveBody() &&method.getDeclaringClass().getName().startsWith("nu.analysis") ){
-				
+		//============
+		System.out.println("start analysis");
+		boolean changed = false;
+		int iterCount = 0;
+		do{
+			changed = false;
+			iterCount++;
+			for(SootMethod m : results.keySet()){
+				IntraProcedureAnalysis analysis = results.get(m);
+				Set<RightValue> readFields = analysis.getReadFields();
+				Set<RightValue> writeFields = analysis.getWriteFields();
+				int readSize = readFields.size();
+				int writeSize = writeFields.size();
+				System.out.println("BEG R:"+readSize+" W:"+writeSize+" ||"+m);
+				Set<RightValue> funcalls = analysis.getFuncalls();
+				for(RightValue rv : funcalls){
+					CallRetValue crv = (CallRetValue)rv;
+					if(!results.containsKey(crv.getMethod())){
+						System.out.println("  give up funcall: "+crv.getMethod());
+						continue;
+					}
+					System.out.println("  process "+rv);
+					Set<RightValue> r = results.get(crv.getMethod()).getReadFields();
+					Set<RightValue> w = results.get(crv.getMethod()).getWriteFields();
+					
+					int count = 0;
+					for(RightValue rrv : r){
+						if(rrv instanceof StaticFieldValue){
+							count++;
+							readFields.add((StaticFieldValue)rrv.clone());
+						}
+						else if(rrv instanceof InstanceFieldValue){
+							InstanceFieldValue ifv = (InstanceFieldValue)rrv;
+							AtomRightValue base = ifv.getBase();
+							if(base instanceof ThisValue){
+								Set<RightValue> b = crv.getThisArgs();
+								if(b != null){
+									for(RightValue bb : b){
+										if(bb instanceof ThisValue){
+											count++;
+											readFields.add((RightValue)ifv.clone());
+											System.out.println("  replace 1.");
+										}
+										else if(bb instanceof InstanceFieldValue){
+											count++;
+											InstanceFieldValue ibb = (InstanceFieldValue)bb.clone();
+											ibb.getFields().addAll(ifv.getFields());
+											readFields.add(ibb);
+											System.out.println("  replace 2."+ibb+" "+ifv);
+										}
+										else if(bb instanceof StaticFieldValue){
+											count++;
+											InstanceFieldValue newIFV = (InstanceFieldValue)ifv.clone();
+											newIFV.setBase((StaticFieldValue)bb);
+											readFields.add((RightValue)newIFV);
+											System.out.println("  replace 3."+bb);
+										}
+										else{
+											System.out.println("  ignore base:"+bb);
+										}
+									}
+								}
+							}
+							else if(base instanceof ParamValue){
+								ParamValue param = (ParamValue)base;
+								Set<RightValue> b = crv.getArgs(param.getIndex());
+								if(b != null){
+									for(RightValue bb : b){
+										if(bb instanceof ThisValue){
+											count++;
+											InstanceFieldValue newVal = (InstanceFieldValue)ifv.clone();
+											newVal.setBase((ThisValue)bb);
+											readFields.add(newVal);
+											System.out.println("  replace 11.");
+										}
+										else if(bb instanceof InstanceFieldValue){
+											count++;
+											InstanceFieldValue ibb = (InstanceFieldValue)bb.clone();
+											ibb.getFields().addAll(ifv.getFields());
+											readFields.add(ibb);
+											System.out.println("  replace 22."+ibb+" "+ifv);
+										}
+										else if(bb instanceof StaticFieldValue){
+											count++;
+											InstanceFieldValue newIFV = (InstanceFieldValue)ifv.clone();
+											newIFV.setBase((StaticFieldValue)bb);
+											readFields.add((RightValue)newIFV);
+											System.out.println("  replace 33."+bb);
+										}
+										else{
+											System.out.println("  ignore base:"+bb);
+										}
+									}
+								}
+							}
+							else if(base instanceof StaticFieldValue){
+								count++;
+								readFields.add((InstanceFieldValue)rrv.clone());
+							}
+						}//rrv instanceof InstanceFieldValue
+					}//read
+					
+					for(RightValue rrv : w){
+						if(rrv instanceof StaticFieldValue){
+							count++;
+							writeFields.add((StaticFieldValue)rrv.clone());
+						}
+						else if(rrv instanceof InstanceFieldValue){
+							InstanceFieldValue ifv = (InstanceFieldValue)rrv;
+							AtomRightValue base = ifv.getBase();
+							if(base instanceof ThisValue){
+								Set<RightValue> b = crv.getThisArgs();
+								if(b != null){
+									for(RightValue bb : b){
+										if(bb instanceof ThisValue){
+											count++;
+											writeFields.add((RightValue)ifv.clone());
+											System.out.println("  replace w1.");
+										}
+										else if(bb instanceof InstanceFieldValue){
+											count++;
+											InstanceFieldValue ibb = (InstanceFieldValue)bb.clone();
+											ibb.getFields().addAll(ifv.getFields());
+											writeFields.add(ibb);
+											System.out.println("  replace w2."+ibb+" "+ifv);
+										}
+										else if(bb instanceof StaticFieldValue){
+											count++;
+											InstanceFieldValue newIFV = (InstanceFieldValue)ifv.clone();
+											newIFV.setBase((StaticFieldValue)bb);
+											writeFields.add((RightValue)newIFV);
+											System.out.println("  replace 23."+bb);
+										}
+										else{
+											System.out.println("  ignore 2base:"+bb);
+										}
+									}
+								}
+							}
+							else if(base instanceof ParamValue){
+								ParamValue param = (ParamValue)base;
+								Set<RightValue> b = crv.getArgs(param.getIndex());
+								if(b != null){
+									for(RightValue bb : b){
+										if(bb instanceof ThisValue){
+											count++;
+											InstanceFieldValue newVal = (InstanceFieldValue)ifv.clone();
+											newVal.setBase((ThisValue)bb);
+											writeFields.add(newVal);
+											System.out.println("  replace 211.");
+										}
+										else if(bb instanceof InstanceFieldValue){
+											count++;
+											InstanceFieldValue ibb = (InstanceFieldValue)bb.clone();
+											ibb.getFields().addAll(ifv.getFields());
+											writeFields.add(ibb);
+											System.out.println("  replace 222."+ibb+" "+ifv);
+										}
+										else if(bb instanceof StaticFieldValue){
+											count++;
+											InstanceFieldValue newIFV = (InstanceFieldValue)ifv.clone();
+											newIFV.setBase((StaticFieldValue)bb);
+											writeFields.add((RightValue)newIFV);
+											System.out.println("  replace 233."+bb);
+										}
+										else{
+											System.out.println("  ignore base:"+bb);
+										}
+									}
+								}
+							}
+							else if(base instanceof StaticFieldValue){
+								count++;
+								readFields.add((InstanceFieldValue)rrv.clone());
+							}
+						}//rrv instanceof InstanceFieldValue
+					}//write
+					
+				}//funcalls
+				if(readFields.size() > readSize || writeFields.size()>writeSize){
+					changed = true;
+				}
+				System.out.println("END R:"+readFields.size()+" W:"+writeFields.size()+" ||"+m);
 			}
-			else if(!method.hasActiveBody())
-				continue;
-			
-			if(!method.getDeclaringClass().getName().startsWith("nu.analysis"))
-				continue;
-			try{
-				System.out.println("  loaded method: "+method+ method.getActiveBody());
-				UnitGraph g = new ExceptionalUnitGraph(method.getActiveBody());
-				//IntraProcedureAnalysis cgt = new IntraProcedureAnalysis(g);
-			}
-			catch(Exception e){
-					System.err.println(e);
-			}
-		} */
+		}while(changed && iterCount<10);
 		
+		System.out.println("RESULTS: ");
+		for(SootMethod m : results.keySet()){
+			IntraProcedureAnalysis analysis = results.get(m);
+			Set<RightValue> reads = analysis.getReadFields();
+			Set<RightValue> writes = analysis.getWriteFields();
+			System.out.println("RS: "+m);
+			for(RightValue rv: reads){
+				System.out.println("  R:"+rv);
+			}
+			for(RightValue rv: writes){
+				System.out.println("  W:"+rv);
+			}
+		}
 
 	}
 

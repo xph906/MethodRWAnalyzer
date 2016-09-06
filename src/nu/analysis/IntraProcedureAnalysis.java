@@ -55,6 +55,7 @@ import soot.jimple.ParameterRef;
 import soot.jimple.Ref;
 import soot.jimple.ReturnStmt;
 import soot.jimple.StaticFieldRef;
+import soot.jimple.StaticInvokeExpr;
 import soot.jimple.ThisRef;
 import soot.jimple.UnopExpr;
 import soot.shimple.ShimpleExpr;
@@ -77,7 +78,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 	};
 	DefAnalysisMap initialValue, prevInitialValue;
 	Set<RightValue> relatedFields, newRelatedFields;
-	Set<RightValue> readFields, writeFields;
+	Set<RightValue> readFields, writeFields, retFields, funcalls;
 	
 	public IntraProcedureAnalysis(DirectedGraph<Unit> graph, SootMethod m) {
 		super(graph);
@@ -125,11 +126,39 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		}
 		analyzeReadWriteFields();
 		analyzeRetValue();
+		analyzeRetValue();
 	}
 	
+	public Set<RightValue> getRetFields() {
+		return retFields;
+	}
+	public Set<RightValue> getFuncalls(){
+		return funcalls;
+	}
+
 	public void analyzeRetValue(){
+		retFields = new HashSet<RightValue>();
 		for(Unit u: this.graph.getTails()){
-			System.out.println("RET: "+u+" ["+method+"]");
+			if (u instanceof ReturnStmt){
+				ReturnStmt rs = (ReturnStmt)u;
+				Value v = rs.getOp();
+				if(v!=null){
+					DefAnalysisMap dam = this.getFlowAfter(u);
+					Set<RightValue> tmp = dam.get(v);
+					if(tmp != null){
+						for(RightValue rv : tmp){
+							if(rv instanceof InstanceFieldValue || 
+									rv instanceof StaticFieldValue ||
+									rv instanceof ParamValue ||
+									rv instanceof ThisValue)
+								retFields.add(rv);
+							else{
+								System.out.println("ALERT: other type of retrun value: "+rv);
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 	
@@ -144,6 +173,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 	public void analyzeReadWriteFields(){
 		readFields = new HashSet<RightValue>();
 		writeFields = new HashSet<RightValue>();
+		funcalls = new HashSet<RightValue>();
 		Iterator<Unit> it = this.graph.iterator();
 		while(it.hasNext()){
 			Unit unit = it.next();
@@ -174,7 +204,13 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 					writeFields.add((StaticFieldValue)k);
 				}
 				
+				
 				for(RightValue v : values){
+					if(k instanceof InvokeExpr){
+						funcalls.add(v);
+						continue;
+					}
+					
 					if(v instanceof InstanceFieldValue){
 						readFields.add((InstanceFieldValue)v);
 					}
@@ -198,6 +234,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 										readFields.add(rv);
 							}
 						}
+						funcalls.add(v);
 					}
 					else if(v instanceof ArrayDataValue){
 						ArrayDataValue adv = (ArrayDataValue)v;
@@ -209,8 +246,13 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 								readFields.add(rv);
 						}
 					}
+					
 				}
 			}
+		}
+		System.out.println("FUN: "+method);
+		for(RightValue rv : funcalls){
+			System.out.println("  C:"+rv);
 		}
 	}
 	
@@ -596,6 +638,40 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 					}
 				}
 				
+			}
+			else{
+				InvokeExpr ie = is.getInvokeExpr();
+				if(ie instanceof InstanceInvokeExpr){
+					InstanceInvokeExpr iie = (InstanceInvokeExpr)ie;
+					out.remove(ie);
+					Set<RightValue> thisArg = new HashSet<RightValue>();
+					Set<RightValue> values = out.get(iie.getBase());
+					if(values != null){
+						for(RightValue v : values){
+							thisArg.add((RightValue)v.clone());
+						}
+					}
+					CallRetValue crv = new CallRetValue(ie.getMethod());
+					crv.addThisArgSet(thisArg);
+					
+					for(int i=0; i<iie.getArgCount(); i++){
+						Value arg = iie.getArg(i);
+						Set<RightValue> vs = resolveRightValue(arg, in, "RegularInstanceInvoke");
+						crv.addArgSet(i, vs);
+					}
+					out.addNewValue(ie, crv);
+				}
+				else if(ie instanceof StaticInvokeExpr){
+					StaticInvokeExpr sie = (StaticInvokeExpr)ie;
+					out.remove(ie);
+					CallRetValue crv = new CallRetValue(ie.getMethod());
+					for(int i=0; i<sie.getArgCount(); i++){
+						Value arg = sie.getArg(i);
+						Set<RightValue> vs = resolveRightValue(arg, in, "RegularStaticInvoke");
+						crv.addArgSet(i, vs);
+					}
+					out.addNewValue(ie, crv);
+				}
 			}
 		}	
 	}
