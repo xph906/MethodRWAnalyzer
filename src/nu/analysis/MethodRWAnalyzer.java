@@ -52,6 +52,7 @@ public class MethodRWAnalyzer {
 		Main.v().main(sootArgs);
 		postInterprocedureAnalyze();
 		displayResults();
+		
 		return results;
 	}
 	
@@ -72,6 +73,7 @@ public class MethodRWAnalyzer {
 			Set<RightValue> reads = analysis.getReadFields();
 			Set<RightValue> writes = analysis.getWriteFields();
 			System.out.println("RS: "+m);
+			//m.getDeclaringClass().getOuterClass()
 			for(RightValue rv: reads){
 				System.out.println("  R:"+rv);
 			}

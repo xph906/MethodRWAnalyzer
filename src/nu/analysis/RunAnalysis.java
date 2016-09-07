@@ -79,7 +79,7 @@ public class RunAnalysis {
 					System.out.println("TEST:"+b.getMethod().getDeclaringClass().getName()+":"+b.getMethod().getName());
 					
 					try{
-						PrintWriter out = new PrintWriter(b.getMethod().getName()+".txt");
+						PrintWriter out = new PrintWriter("./tmp/"+b.getMethod().getName()+"-"+b.getMethod().getDeclaringClass().getName()+".txt");
 						out.println("@@Start analyzing:"+b.getMethod().getName());
 						UnitGraph g = new ExceptionalUnitGraph(b);
 						IntraProcedureAnalysis analysis = new IntraProcedureAnalysis(g, b.getMethod());

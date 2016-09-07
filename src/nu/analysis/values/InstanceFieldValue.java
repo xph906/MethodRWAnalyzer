@@ -38,13 +38,13 @@ public class InstanceFieldValue extends RightValue {
 		return newFields;
 	}
 	public void addField(SootField field){
-		if(fields.size()<3)
+		if(fields.size()<4)
 			fields.add(field);
 		else
 			System.out.println("stop adding field because it's 3");
 	}
 	public void addFields(Collection<SootField> newFields){
-		if(fields.size()+newFields.size()<=3)
+		if(fields.size()+newFields.size()<=4)
 			fields.addAll(newFields);
 		else
 			System.out.println("stop adding field because it's 3");
