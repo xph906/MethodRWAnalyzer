@@ -1,6 +1,7 @@
 package nu.analysis.values;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 
@@ -27,9 +28,28 @@ public class InstanceFieldValue extends RightValue {
 	public void setBase(AtomRightValue b){
 		this.base = b;
 	}
-	public List<SootField> getFields(){
+	private List<SootField> getFields(){
 		return fields;
 	}
+	public List<SootField> getCloneFields(){
+		List<SootField> newFields = new ArrayList<SootField>(fields.size());
+		for(SootField f : fields)
+			newFields.add(f);
+		return newFields;
+	}
+	public void addField(SootField field){
+		if(fields.size()<3)
+			fields.add(field);
+		else
+			System.out.println("stop adding field because it's 3");
+	}
+	public void addFields(Collection<SootField> newFields){
+		if(fields.size()+newFields.size()<=3)
+			fields.addAll(newFields);
+		else
+			System.out.println("stop adding field because it's 3");
+	}
+	
 	public boolean isThisReference(){
 		if(base instanceof ThisValue)
 			return true;

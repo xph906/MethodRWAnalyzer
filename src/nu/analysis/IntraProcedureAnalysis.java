@@ -85,7 +85,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		this.graph = graph;
 		this.method = m;
 		//initialValue = new DefAnalysisMap();
-		System.out.println("Analyzing method: "+m.getSignature());
+		//System.out.println("Analyzing method: "+m.getSignature());
 		/*for(SootField f : m.getDeclaringClass().getFields()){
 			RightValue ref = null;
 			if(f.isStatic())
@@ -810,7 +810,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				}
 				else if(rv instanceof InstanceFieldValue){
 					InstanceFieldValue ifv = (InstanceFieldValue)rv;
-					List<SootField> newFields = copyList(ifv.getFields());
+					List<SootField> newFields = ifv.getCloneFields();
 					newFields.add(f);
 					rs.add(new InstanceFieldValue(ifv.getBase(), newFields));
 				}
@@ -898,7 +898,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				System.out.println("  KKK:"+kkk);
 			}*/
 			//System.out.println("  MMM:"+(findKeyFromInSet(in, arg)));
-			System.out.println("  DEBUG: "+msg+" do base searching for ref value: "+arg);
+			//System.out.println("  DEBUG: "+msg+" do base searching for ref value: "+arg);
 			if(arg instanceof ArrayRef){
 				ArrayRef arrRef = (ArrayRef)arg;
 				Set<RightValue> tmp = resolveArrayRefRightValue(arrRef, in);
@@ -925,7 +925,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 			else if(arg instanceof InstanceFieldRef){
 				InstanceFieldRef ifr = (InstanceFieldRef)arg;
 				List<RightValue> tmp = fromInstanceFieldRef2InstanceFieldValue(ifr, in);
-				System.out.println("    DEBUG:  InstanceFieldRef: found "+tmp.size()+" base values.");
+				//System.out.println("    DEBUG:  InstanceFieldRef: found "+tmp.size()+" base values.");
 				for(RightValue rv : tmp){
 					if(in.containsKey(rv)){
 						for(RightValue v : in.get(rv)){
@@ -941,11 +941,11 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 			}
 			else if(arg instanceof StaticFieldRef){
 				StaticFieldRef sfr = (StaticFieldRef)arg;
-				System.out.println("    DEBUG:  StaticFieldRef: ");
+				//System.out.println("    DEBUG:  StaticFieldRef: ");
 				values.add(new StaticFieldValue(sfr.getField().getDeclaringClass(), sfr.getField()));
 			}
 			else{
-				System.out.println("  ALERT: "+msg+" unknown ref: "+arg);
+				//System.out.println("  ALERT: "+msg+" unknown ref: "+arg);
 			}
 		}
 		return values;
