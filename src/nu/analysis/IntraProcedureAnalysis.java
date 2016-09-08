@@ -45,6 +45,7 @@ import soot.jimple.IdentityStmt;
 import soot.jimple.InstanceFieldRef;
 import soot.jimple.InstanceInvokeExpr;
 import soot.jimple.InstanceOfExpr;
+import soot.jimple.InterfaceInvokeExpr;
 import soot.jimple.InvokeExpr;
 import soot.jimple.InvokeStmt;
 import soot.jimple.NewArrayExpr;
@@ -67,7 +68,7 @@ import soot.toolkits.scalar.ForwardFlowAnalysis;
 //Method B will modify several fields and the parameters passed into it,
 //Therefore, the analysis results of A should include those changes made by method B.
 //TODO: for ArrayRef, it will be labeled as READ even if it's completely rewritten in 
-//the begining.
+//the beginning.
 public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysisMap>{
 	DirectedGraph<Unit> graph = null;
 	Pattern thisPattern = Pattern.compile("^@this:");
@@ -206,7 +207,33 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				
 				for(RightValue v : values){
 					if(k instanceof InvokeExpr){
+						System.out.println("addfuncall: "+v);
+						CallRetValue crv = (CallRetValue)v;
+						Set<RightValue> args = crv.getThisArgs();
+						if(args != null){
+							for(RightValue rv : args){
+								//if(rv instanceof InstanceFieldValue || rv instanceof StaticFieldValue)
+								if(rv instanceof InstanceFieldValue ||
+									rv instanceof StaticFieldValue ||
+									rv instanceof ParamValue ||
+									rv instanceof ThisValue)
+								readFields.add(rv);
+							}
+						}
+						for(int i=0; i<crv.getArgCount(); i++){
+							args = crv.getArgs(i);
+							if(args != null){
+								for(RightValue rv : args)
+									//if(rv instanceof InstanceFieldValue || rv instanceof StaticFieldValue)
+									if(rv instanceof InstanceFieldValue ||
+											rv instanceof StaticFieldValue ||
+											rv instanceof ParamValue ||
+											rv instanceof ThisValue)
+									readFields.add(rv);
+							}
+						}
 						funcalls.add(v);
+						
 						continue;
 					}
 					
@@ -221,16 +248,24 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 						Set<RightValue> args = crv.getThisArgs();
 						if(args != null){
 							for(RightValue rv : args){
-								if(rv instanceof InstanceFieldValue || rv instanceof StaticFieldValue)
-									readFields.add(rv);
+								//if(rv instanceof InstanceFieldValue || rv instanceof StaticFieldValue)
+								if(rv instanceof InstanceFieldValue ||
+									rv instanceof StaticFieldValue ||
+									rv instanceof ParamValue ||
+									rv instanceof ThisValue)
+								readFields.add(rv);
 							}
 						}
 						for(int i=0; i<crv.getArgCount(); i++){
 							args = crv.getArgs(i);
 							if(args != null){
 								for(RightValue rv : args)
-									if(rv instanceof InstanceFieldValue || rv instanceof StaticFieldValue)
-										readFields.add(rv);
+									//if(rv instanceof InstanceFieldValue || rv instanceof StaticFieldValue)
+									if(rv instanceof InstanceFieldValue ||
+											rv instanceof StaticFieldValue ||
+											rv instanceof ParamValue ||
+											rv instanceof ThisValue)
+									readFields.add(rv);
 							}
 						}
 						funcalls.add(v);
@@ -238,10 +273,16 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 					else if(v instanceof ArrayDataValue){
 						ArrayDataValue adv = (ArrayDataValue)v;
 						RightValue base = adv.getBase();
-						if(base instanceof InstanceFieldValue || base instanceof StaticFieldValue)
+						if(base instanceof InstanceFieldValue ||
+								base instanceof StaticFieldValue ||
+								base instanceof ParamValue ||
+								base instanceof ThisValue)
 							writeFields.add(base);
 						for(RightValue rv : adv.getData()){
-							if(rv instanceof InstanceFieldValue || rv instanceof StaticFieldValue)
+							if(rv instanceof InstanceFieldValue ||
+									rv instanceof StaticFieldValue ||
+									rv instanceof ParamValue ||
+									rv instanceof ThisValue)
 								readFields.add(rv);
 						}
 					}
@@ -394,6 +435,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				else if(ie instanceof DynamicInvokeExpr){
 					System.out.println("DYNAMICINVOKEEXPR ");
 				}
+			
 				System.out.println("  DEBUG: InvokeExpr "+as.getRightOp().getType());
 
 				CallRetValue crv = new CallRetValue(ie.getMethod());
@@ -596,6 +638,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		}
 		else if(d instanceof InvokeStmt){
 			InvokeStmt is = (InvokeStmt)d;
+			/*
 			if(is.getInvokeExpr().getMethod().isConstructor()){
 				//TODO: what if a.b = new CLS(arg);
 				//TODO: what if $a.init, but $a is an arrayRef
@@ -643,41 +686,41 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 					}
 				}
 				
-			}
-			else{
-				InvokeExpr ie = is.getInvokeExpr();
-				if(ie instanceof InstanceInvokeExpr){
-					InstanceInvokeExpr iie = (InstanceInvokeExpr)ie;
-					out.remove(ie);
-					Set<RightValue> thisArg = new HashSet<RightValue>();
-					Set<RightValue> values = out.get(iie.getBase());
-					if(values != null){
-						for(RightValue v : values){
-							thisArg.add((RightValue)v.clone());
-						}
+			}*/
+			//else{
+			InvokeExpr ie = is.getInvokeExpr();
+			if(ie instanceof InstanceInvokeExpr){
+				InstanceInvokeExpr iie = (InstanceInvokeExpr)ie;
+				out.remove(ie);
+				Set<RightValue> thisArg = new HashSet<RightValue>();
+				Set<RightValue> values = resolveRightValue(iie.getBase(), in, "Invoke Base");
+				if(values != null){
+					for(RightValue v : values){
+						thisArg.add((RightValue)v.clone());
 					}
-					CallRetValue crv = new CallRetValue(ie.getMethod());
-					crv.addThisArgSet(thisArg);
-					
-					for(int i=0; i<iie.getArgCount(); i++){
-						Value arg = iie.getArg(i);
-						Set<RightValue> vs = resolveRightValue(arg, in, "RegularInstanceInvoke");
-						crv.addArgSet(i, vs);
-					}
-					out.addNewValue(ie, crv);
 				}
-				else if(ie instanceof StaticInvokeExpr){
-					StaticInvokeExpr sie = (StaticInvokeExpr)ie;
-					out.remove(ie);
-					CallRetValue crv = new CallRetValue(ie.getMethod());
-					for(int i=0; i<sie.getArgCount(); i++){
-						Value arg = sie.getArg(i);
-						Set<RightValue> vs = resolveRightValue(arg, in, "RegularStaticInvoke");
-						crv.addArgSet(i, vs);
-					}
-					out.addNewValue(ie, crv);
+				CallRetValue crv = new CallRetValue(ie.getMethod());
+				crv.addThisArgSet(thisArg);
+				
+				for(int i=0; i<iie.getArgCount(); i++){
+					Value arg = iie.getArg(i);
+					Set<RightValue> vs = resolveRightValue(arg, in, "RegularInstanceInvoke");
+					crv.addArgSet(i, vs);
 				}
+				out.addNewValue(ie, crv);
 			}
+			else if(ie instanceof StaticInvokeExpr){
+				StaticInvokeExpr sie = (StaticInvokeExpr)ie;
+				out.remove(ie);
+				CallRetValue crv = new CallRetValue(ie.getMethod());
+				for(int i=0; i<sie.getArgCount(); i++){
+					Value arg = sie.getArg(i);
+					Set<RightValue> vs = resolveRightValue(arg, in, "RegularStaticInvoke");
+					crv.addArgSet(i, vs);
+				}
+				out.addNewValue(ie, crv);
+			}
+			//}
 		}	
 	}
 
