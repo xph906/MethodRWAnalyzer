@@ -55,6 +55,11 @@ public class InstanceFieldValue extends RightValue {
 			return true;
 		return false;
 	}
+	public boolean isParamReference(){
+		if(base instanceof ParamValue)
+			return true;
+		return false;
+	}
 	
 	@Override
 	public void apply(Switch sw) {

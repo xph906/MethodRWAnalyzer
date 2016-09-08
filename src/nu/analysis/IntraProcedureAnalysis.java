@@ -126,7 +126,6 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		}
 		analyzeReadWriteFields();
 		analyzeRetValue();
-		analyzeRetValue();
 	}
 	
 	public Set<RightValue> getRetFields() {
@@ -187,7 +186,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 					if(values.size()==1){
 						RightValue rv = values.iterator().next();
 						if(rv instanceof InstanceFieldValue && rv.equals(k)){
-							System.out.println("DEBUG: prestored InstanceFiedlValue: "+k+" VS "+rv);
+							//System.out.println("DEBUG: prestored InstanceFiedlValue: "+k+" VS "+rv);
 							continue;
 						}
 					}
@@ -197,7 +196,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 					if(values.size()==1){
 						RightValue rv = values.iterator().next();
 						if(rv instanceof StaticFieldValue && rv.equals(k)){
-							System.out.println("DEBUG: prestored StaticFieldValue: "+k+" VS "+rv);
+							//System.out.println("DEBUG: prestored StaticFieldValue: "+k+" VS "+rv);
 							continue;
 						}
 					}
@@ -350,9 +349,13 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 			for(RightValue rv : terminalOps)
 				out.remove(rv);
 			
+			//set newRelatedFileds
+			//This is used to indicate whether new fields are discovered.
 			if(leftOp instanceof InstanceFieldValue ){
 				InstanceFieldValue ifv = (InstanceFieldValue)leftOp;
-				if(ifv.isThisReference())
+				if(ifv.isThisReference() )
+					newRelatedFields.add(ifv);
+				if(ifv.isParamReference())
 					newRelatedFields.add(ifv);
 			}
 			if(leftOp instanceof StaticFieldValue){
@@ -363,6 +366,8 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				if(rv instanceof InstanceFieldValue ){
 					InstanceFieldValue ifv = (InstanceFieldValue)rv;
 					if(ifv.isThisReference())
+						newRelatedFields.add(ifv);
+					if(ifv.isParamReference())
 						newRelatedFields.add(ifv);
 				}
 				if(rv instanceof StaticFieldValue){
@@ -848,6 +853,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 	}
 	
 	//This function find all ArrayRef's values.
+	//It's guaranteed that any resolved value cannot be further resolved to another one
 	private Set<RightValue> resolveArrayRefRightValue(ArrayRef ar, DefAnalysisMap in){
 		Set<RightValue> rs = new HashSet<RightValue>();
 		
@@ -859,7 +865,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		for(RightValue base : baseSet){
 			ArrayDataValue adv = in.findArrayDataValueFromBase(base);
 			if(adv == null){
-				System.out.println("ALERT: Cannot find ARRVAL for base: "+base+". add base!");
+				System.out.println("ALERT: Cannot find ARRVAL for base: "+base+". add base!"+ar);
 				//TODO: if cannot find array data, use its base. Think about this design.
 				rs.add(base);
 			}
@@ -872,6 +878,9 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		return rs;
 	}
 	
+	//find Value's Right Value. 
+	//if it's Ref, we might need to resolve its base first and then 
+	//it's guaranteed that any resulved value can not be further solved to another value.
 	private Set<RightValue> resolveRightValue(Value arg,  DefAnalysisMap in, String msg){
 		Set<RightValue> values = new HashSet<RightValue>();
 		//System.out.println("YYY "+arg);
@@ -893,12 +902,6 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				values.add(v);
 		}
 		else if(arg instanceof Ref){
-			/*System.out.println("  YYY2 "+arg);
-			for(Value kkk : in.keyValueSet()){
-				System.out.println("  KKK:"+kkk);
-			}*/
-			//System.out.println("  MMM:"+(findKeyFromInSet(in, arg)));
-			//System.out.println("  DEBUG: "+msg+" do base searching for ref value: "+arg);
 			if(arg instanceof ArrayRef){
 				ArrayRef arrRef = (ArrayRef)arg;
 				Set<RightValue> tmp = resolveArrayRefRightValue(arrRef, in);
@@ -908,19 +911,6 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				}
 				else
 					values = tmp;
-				//System.out.println("    DEBUG:  ArrayRef: found "+tmp.size()+" base values.");
-				/*for(RightValue rv : tmp){
-					if(in.containsKey(rv)){
-						for(RightValue v : in.get(rv)){
-							System.out.println("      Found source:"+v);
-							values.add(v);
-						}
-					}
-					else{
-						System.out.println("      Not found source, add new rightValue: "+rv);
-						values.add(rv);
-					}
-				}*/
 			}
 			else if(arg instanceof InstanceFieldRef){
 				InstanceFieldRef ifr = (InstanceFieldRef)arg;
@@ -928,25 +918,23 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				//System.out.println("    DEBUG:  InstanceFieldRef: found "+tmp.size()+" base values.");
 				for(RightValue rv : tmp){
 					if(in.containsKey(rv)){
-						for(RightValue v : in.get(rv)){
-							System.out.println("      Found source:"+v);
+						for(RightValue v : in.get(rv))
 							values.add(v);
-						}
 					}
-					else{
-						System.out.println("      Not found source, add new rightValue: "+rv);
+					else 
 						values.add(rv);
-					}
 				}
 			}
 			else if(arg instanceof StaticFieldRef){
 				StaticFieldRef sfr = (StaticFieldRef)arg;
-				//System.out.println("    DEBUG:  StaticFieldRef: ");
 				values.add(new StaticFieldValue(sfr.getField().getDeclaringClass(), sfr.getField()));
 			}
 			else{
-				//System.out.println("  ALERT: "+msg+" unknown ref: "+arg);
+				System.out.println("  ALERT: "+msg+" unknown ref: "+arg);
 			}
+		}
+		else{
+			System.out.println("ALERT: cannot resolve this non-ref value: "+arg);
 		}
 		return values;
 	}

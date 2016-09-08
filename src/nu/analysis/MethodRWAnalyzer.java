@@ -66,6 +66,30 @@ public class MethodRWAnalyzer {
 		return results;
 	}
 	
+	public Map<SootMethod, IntraProcedureAnalysis> startAnalysisJarFile(){
+		String mainJarFile = "/Users/a/Projects/AndroidDataFlow/apps/TestJava.jar";
+		String rtJarLocation = "/Library/Java/JavaVirtualMachines/jdk1.8.0_45.jdk//Contents/Home/jre/lib/rt.jar";
+		String jceJarLocation = "/Library/Java/JavaVirtualMachines/jdk1.8.0_45.jdk//Contents/Home/jre/lib/jce.jar";
+		
+		String classPath = rtJarLocation+ ":"+jceJarLocation+":"+System.getProperty("java.class.path")+":.:"+mainJarFile;
+		System.out.println(classPath);
+		String[] sootArgs = {"nu.dataflow.MainClass",
+				"-cp", classPath,  
+				"-app", "-w","-ire","-no-bodies-for-excluded",
+				"-main-class", "nu.dataflow.MainClass",
+				"-f", "none" 
+		};
+		
+		PackManager.v().getPack("jtp").add(
+			    new Transform("jtp.myTransform", new RWAnalyzerBodyTransformer()));
+		Options.v().set_src_prec(Options.src_prec_apk);
+		Main.v().main(sootArgs);
+		postInterprocedureAnalyze();
+		displayResults();
+		
+		return results;
+	}
+	
 	public void displayResults(){
 		System.out.println("RESULTS: ");
 		for(SootMethod m : results.keySet()){
@@ -288,7 +312,7 @@ public class MethodRWAnalyzer {
 			System.out.println("TEST:"+b.getMethod().getDeclaringClass().getName()+":"+b.getMethod().getName());
 			
 			try{
-				PrintWriter out = new PrintWriter(b.getMethod().getName()+".txt");
+				PrintWriter out = new PrintWriter("./tmp/"+b.getMethod().getName()+"-"+b.getMethod().getDeclaringClass().getName()+".txt");
 				out.println("@@Start analyzing:"+b.getMethod().getName());
 				
 				UnitGraph g = new ExceptionalUnitGraph(b);

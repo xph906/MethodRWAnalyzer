@@ -1,7 +1,10 @@
 package nu.analysis.values;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import soot.Type;
 import soot.Unit;
@@ -12,12 +15,47 @@ import soot.util.Switch;
 
 public class NewValue extends AtomRightValue {
 	Unit defUnit;
+	ArrayList<Set> args;
+	
 	
 	public Unit getUnit(){
 		return defUnit;
 	}
 	public NewValue(Unit u){
 		defUnit = u;
+		args = new ArrayList<Set>();
+	}
+	public int getArgCount(){
+		return args.size();
+	}
+	public void addArgSet(int index, Set<RightValue> argSet){
+		while(index >= args.size()){
+			args.add(new HashSet<AtomRightValue>());
+		}
+		Set<RightValue> s = args.get(index);
+		
+		for(RightValue rv : argSet){
+			if(rv instanceof AtomRightValue){
+				s.add((AtomRightValue)rv);
+			}
+			else if(rv instanceof InstanceFieldValue)
+				s.add(rv);
+			else if(rv instanceof CallRetValue){
+				CallRetValue crv = (CallRetValue)rv;
+				if(crv.getThisArgs() != null){
+					for(RightValue rrv : crv.getThisArgs())
+						s.add(rrv);
+				}
+				for(int i=0; i<crv.getArgCount(); i++){
+					for(RightValue rrv : crv.getArgs(i)){
+						s.add(rrv);
+					}
+				}
+			}
+			else {
+				System.out.println("ALERT: value "+rv+" cannot be added as arg");
+			}
+		}
 	}
 	
 	@Override

@@ -40,8 +40,10 @@ public class RunAnalysis {
 		MethodRWAnalyzer analyzer = new MethodRWAnalyzer();
 		Map<SootMethod, IntraProcedureAnalysis> results = analyzer.startAnalysis(apkLocation, platformLocation);
 		*/
+		MethodRWAnalyzer analyzer = new MethodRWAnalyzer();
+		Map<SootMethod, IntraProcedureAnalysis> results = analyzer.startAnalysisJarFile();
 		
-		
+		/*
 		String mainJarFile = "/Users/a/Projects/AndroidDataFlow/apps/TestJava.jar";
 		String rtJarLocation = "/Library/Java/JavaVirtualMachines/jdk1.8.0_45.jdk//Contents/Home/jre/lib/rt.jar";
 		String jceJarLocation = "/Library/Java/JavaVirtualMachines/jdk1.8.0_45.jdk//Contents/Home/jre/lib/jce.jar";
@@ -49,8 +51,6 @@ public class RunAnalysis {
 		//String mainJarFile = "/home/xpan/Projects/AndroidDataflow/apps/TestJava.jar";
 		//String rtJarLocation = "/home/xpan/Libs/java/jdk1.8.0_101/jre/lib/rt.jar";
 		//String jceJarLocation = "/home/xpan/Libs/java/jdk1.8.0_101/jre/lib/jce.jar";
-		
-		String others = ":/Users/a/Projects/AndroidDataFlow/libs/android-support-4.0.jar";
 		String classPath = rtJarLocation+ ":"+jceJarLocation+":"+System.getProperty("java.class.path")+":.:"+mainJarFile;
 		System.out.println(classPath);
 		String[] sootArgs = {"nu.dataflow.MainClass",
@@ -60,8 +60,6 @@ public class RunAnalysis {
 				"-f", "none" 
 		};
 		
-		Map<SootMethod, Set<RightValue>> methodReadParam = new HashMap<SootMethod, Set<RightValue>>();
-		Map<SootMethod, Set<RightValue>> methodWriteParam = new HashMap<SootMethod, Set<RightValue>>();
 		Map<SootMethod, IntraProcedureAnalysis> results = new HashMap<SootMethod, IntraProcedureAnalysis>();
 		PackManager.v().getPack("jtp").add(
 			    new Transform("jtp.myTransform", new BodyTransformer() {
@@ -135,6 +133,7 @@ public class RunAnalysis {
 				System.out.println("  W:"+rv);
 			}
 		}
+		*/
 		
 
 	}
