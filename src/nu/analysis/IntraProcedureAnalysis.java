@@ -74,9 +74,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 	Pattern thisPattern = Pattern.compile("^@this:");
 	Pattern paramPattern = Pattern.compile("^@parameter(\\d+):");
 	SootMethod method = null;
-	Comparator<Value> ValueComparator = (Value a, Value b) -> {
-	    return a.toString().compareTo(b.toString());
-	};
+	
 	DefAnalysisMap initialValue, prevInitialValue;
 	Set<RightValue> relatedFields, newRelatedFields;
 	Set<RightValue> readFields, writeFields, retFields, funcalls;
@@ -129,6 +127,24 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		analyzeRetValue();
 	}
 	
+	public DirectedGraph<Unit> getGraph() {
+		return graph;
+	}
+	
+	public DefAnalysisMap getFlowAfterFromRemoteUnit(Unit t){
+		for(Unit u : graph){
+			if(u.toString().equals(t.toString()))
+				return getFlowAfter(u);
+			else {
+				System.out.println("=======================");
+				System.out.println(u.toString());
+				System.out.println(t.toString());
+				System.out.println("#######################");
+			}
+		}
+		return null;
+	}
+
 	public Set<RightValue> getRetFields() {
 		return retFields;
 	}
@@ -153,7 +169,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 									rv instanceof ThisValue)
 								retFields.add(rv);
 							else{
-								System.out.println("ALERT: other type of retrun value: "+rv);
+								//System.out.println("ALERT: other type of retrun value: "+rv);
 							}
 						}
 					}
@@ -207,7 +223,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				
 				for(RightValue v : values){
 					if(k instanceof InvokeExpr){
-						System.out.println("addfuncall: "+v);
+						//System.out.println("addfuncall: "+v);
 						CallRetValue crv = (CallRetValue)v;
 						Set<RightValue> args = crv.getThisArgs();
 						if(args != null){
@@ -290,10 +306,10 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				}
 			}
 		}
-		System.out.println("FUN: "+method);
-		for(RightValue rv : funcalls){
-			System.out.println("  C:"+rv);
-		}
+//		System.out.println("FUN: "+method);
+//		for(RightValue rv : funcalls){
+//			System.out.println("  C:"+rv);
+//		}
 	}
 	
 	private Set<RightValue> getInitalRelatedFields(  SootMethod m){
@@ -309,7 +325,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 			}
 			relatedFields.add(ref);
 		}
-		System.out.println("DEBUG getInitalRelatedFields gen "+relatedFields.size()+" fields");
+		//System.out.println("DEBUG getInitalRelatedFields gen "+relatedFields.size()+" fields");
 		return relatedFields;
 	}
 	private DefAnalysisMap genInitialDefAnalysisMapFromFields(Set<RightValue> relatedFields){
@@ -322,13 +338,13 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 
 	@Override
 	protected DefAnalysisMap newInitialFlow() {
-		System.out.println("NewInitialFlow is called: "+this.method.getSignature());
+		//System.out.println("NewInitialFlow is called: "+this.method.getSignature());
 		return (DefAnalysisMap)initialValue.clone();
 		//return new DefAnalysisMap();
 	}
 	@Override
 	protected DefAnalysisMap entryInitialFlow() {
-		System.out.println("EntryInitialFlow is called: "+this.method.getSignature());
+		//System.out.println("EntryInitialFlow is called: "+this.method.getSignature());
 		return (DefAnalysisMap)initialValue.clone();
 	}
 
@@ -357,12 +373,12 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				out.setNewValue(left, new ParamValue(pr.getIndex()));
 			}
 			else{
-				System.err.println("error: IdentityStmt is neither this or param");
+				System.err.println("error: IdentityStmt is neither this or param "+is);
 			}
 		}
 		else if(d instanceof AssignStmt){
 			AssignStmt as = (AssignStmt)d;
-			System.out.println("AssignStmt: "+as);
+			//System.out.println("AssignStmt: "+as);
 			
 			boolean removeLeftOps = true;
 			Value rightOp = as.getRightOp();
@@ -370,9 +386,9 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 			List<RightValue> terminalOps = null;
 			List<ArrayDataValue> arrDataOps = null;
 			if(leftOp instanceof InstanceFieldRef)
-				terminalOps = fromInstanceFieldRef2InstanceFieldValue((InstanceFieldRef)leftOp, in);
+				terminalOps = AnalysisUtility.fromInstanceFieldRef2InstanceFieldValue((InstanceFieldRef)leftOp, in);
 			else if(leftOp instanceof ArrayRef){
-				arrDataOps = findLeftOpsForArrayRef((ArrayRef)leftOp, in);
+				arrDataOps = AnalysisUtility.findLeftOpsForArrayRef((ArrayRef)leftOp, in);
 				//TODO: ideally, we need to differentiate numeric index and variable index
 				// for numeric index, we do removeLeftOps, while for numeric index, we don't.
 				//TODO: currently, we will consider this.array as read even if it is just used as
@@ -428,7 +444,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				if(ie instanceof InstanceInvokeExpr){
 					thisArg = new HashSet<RightValue>();
 					InstanceInvokeExpr iie = (InstanceInvokeExpr)ie;
-					Set<RightValue> vs = resolveRightValue(iie.getBase(), in, "InstanceInvokeExpr");
+					Set<RightValue> vs = AnalysisUtility.resolveRightValue(iie.getBase(), in, "InstanceInvokeExpr");
 					for(RightValue v : vs)
 						thisArg.add(v);
 				}
@@ -436,14 +452,14 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 					System.out.println("DYNAMICINVOKEEXPR ");
 				}
 			
-				System.out.println("  DEBUG: InvokeExpr "+as.getRightOp().getType());
+				//System.out.println("  DEBUG: InvokeExpr "+as.getRightOp().getType());
 
 				CallRetValue crv = new CallRetValue(ie.getMethod());
 				crv.addThisArgSet(thisArg);
 				newRightValue = crv;
 				for(int i=0; i<ie.getArgCount(); i++){
 					Value arg = ie.getArg(i);
-					Set<RightValue> vs = resolveRightValue(arg, in, "InvokeExprArgs");
+					Set<RightValue> vs = AnalysisUtility.resolveRightValue(arg, in, "InvokeExprArgs");
 					crv.addArgSet(i, vs);
 				}
 				
@@ -457,10 +473,10 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 						out.addNewArrayDataValue(adv);
 					}
 				}
-				System.out.println("    DEBUG: InvokeExpr RS:"+newRightValue);
+				//System.out.println("    DEBUG: InvokeExpr RS:"+newRightValue);
 			}
 			else if(rightOp instanceof AnyNewExpr){
-				System.out.println("  AnyNewExpr.");
+				//System.out.println("  AnyNewExpr.");
 				newRightValue = new NewValue(as);
 				out.setNewValue(leftOp, newRightValue);
 				for(RightValue rv : terminalOps)
@@ -474,18 +490,18 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				}
 			}
 			else if(rightOp instanceof BinopExpr){
-				System.out.println("  DEBUG: BinopExpr");
+				//System.out.println("  DEBUG: BinopExpr");
 				BinopExpr be = (BinopExpr)rightOp;
 				Value arg1 = be.getOp1();
-				Set<RightValue> values1 = resolveRightValue(arg1, in, "BinopExpr");
+				Set<RightValue> values1 = AnalysisUtility.resolveRightValue(arg1, in, "BinopExpr");
 				Value arg2 = be.getOp2();
-				Set<RightValue> values2 = resolveRightValue(arg2, in, "BinopExpr");
+				Set<RightValue> values2 = AnalysisUtility.resolveRightValue(arg2, in, "BinopExpr");
 				for(RightValue rv : values2){
 					//System.out.println("  DEBUG: BinopExpr RS:"+rv);
 					values1.add(rv);
 				}
 				for(RightValue rv : values1){
-					System.out.println("  DEBUG: BinopExpr TO:" +leftOp+ " add RV:"+rv+" ");
+					//System.out.println("  DEBUG: BinopExpr TO:" +leftOp+ " add RV:"+rv+" ");
 					out.addNewValue(leftOp, rv);
 					for(RightValue v2 : terminalOps)
 						out.addNewValue(v2, rv);
@@ -497,15 +513,13 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 						}
 					}
 				}
-				
-				
-				System.out.println("  DEBUG: BinopExpr RS:"+out.toString());
+				//System.out.println("  DEBUG: BinopExpr RS:"+out.toString());
 			}
 			else if(rightOp instanceof InstanceOfExpr){
 				System.out.println("  DEBUG: InstanceOfExpr do nothing.");
 			}
 			else if(rightOp instanceof NewArrayExpr){
-				System.out.println("  DEBUG: NewArrayExpr");
+				//System.out.println("  DEBUG: NewArrayExpr");
 				newRightValue = new NewArrayValue(as);
 				out.setNewValue(leftOp, newRightValue);
 				for(RightValue rv : terminalOps)
@@ -519,7 +533,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				}
 			}
 			else if(rightOp instanceof NewExpr){
-				System.out.println("  DEBUG: NewExpr.");
+				//System.out.println("  DEBUG: NewExpr.");
 				newRightValue = new NewValue(as);
 				out.setNewValue(leftOp, newRightValue);
 				for(RightValue rv : terminalOps)
@@ -533,7 +547,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				}
 			}
 			else if(rightOp instanceof NewMultiArrayExpr){
-				System.out.println("  DEBUG: NewMultiArrayExpr.");
+				//System.out.println("  DEBUG: NewMultiArrayExpr.");
 				newRightValue = new NewValue(as);
 				out.setNewValue(leftOp, newRightValue);
 				for(RightValue rv : terminalOps)
@@ -550,13 +564,11 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				System.out.println("  DEBUG: ShimpleExpr do nothing.");
 			}
 			else if(rightOp instanceof UnopExpr){
-				System.out.println("  DEBUG: UnopExpr");
+				//System.out.println("  DEBUG: UnopExpr");
 				UnopExpr ue = (UnopExpr)rightOp;
 				Value arg = ue.getOp();
-				Set<RightValue> values = resolveRightValue(arg, in, "UnopExpr");
-				for(RightValue rv : values){
-					System.out.println("  DEBUG: UnopExpr RS:"+rv);
-				}
+				Set<RightValue> values = AnalysisUtility.resolveRightValue(arg, in, "UnopExpr");
+				
 				for(RightValue rv : values){
 					out.addNewValue(leftOp, rv);
 					for(RightValue v2 : terminalOps)
@@ -571,13 +583,11 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				}
 			}
 			else if(rightOp instanceof CastExpr){
-				System.out.println("  DEBUG: CastExpr");
+				//System.out.println("  DEBUG: CastExpr");
 				CastExpr ce = (CastExpr)rightOp;
 				Value arg = ce.getOp();
-				Set<RightValue> values = resolveRightValue(arg, in, "CastExpr");
-				for(RightValue rv : values){
-					System.out.println("  DEBUG: UnopExpr RS:"+rv);
-				}
+				Set<RightValue> values = AnalysisUtility.resolveRightValue(arg, in, "CastExpr");
+				
 				for(RightValue rv : values){
 					out.addNewValue(leftOp, rv);
 					for(RightValue v2 : terminalOps)
@@ -593,7 +603,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				}
 			}
 			else if(rightOp instanceof Constant){
-				System.out.println("  DEBUG: Constant");
+				//System.out.println("  DEBUG: Constant");
 				newRightValue = new ConstantValue(rightOp);
 				out.setNewValue(leftOp, newRightValue);
 				for(RightValue rv : terminalOps)
@@ -610,10 +620,10 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 					(rightOp instanceof ArrayRef)        ||
 					(rightOp instanceof InstanceFieldRef)||
 					(rightOp instanceof StaticFieldRef)){
-				System.out.println("  DEBUG: "+rightOp.getClass());
-				Set<RightValue> values = resolveRightValue(rightOp, in, rightOp.getClass().toString());
+				//System.out.println("  DEBUG: "+rightOp.getClass());
+				Set<RightValue> values = AnalysisUtility.resolveRightValue(rightOp, in, rightOp.getClass().toString());
 				for(RightValue rv : values){
-					System.out.println("  DEBUG: "+rightOp.getClass()+" RS:"+rv);
+					//System.out.println("  DEBUG: "+rightOp.getClass()+" RS:"+rv);
 					out.addNewValue(leftOp, rv);
 					for(RightValue v2 : terminalOps)
 						out.addNewValue(v2, rv);
@@ -693,7 +703,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				InstanceInvokeExpr iie = (InstanceInvokeExpr)ie;
 				out.remove(ie);
 				Set<RightValue> thisArg = new HashSet<RightValue>();
-				Set<RightValue> values = resolveRightValue(iie.getBase(), in, "Invoke Base");
+				Set<RightValue> values = AnalysisUtility.resolveRightValue(iie.getBase(), in, "Invoke Base");
 				if(values != null){
 					for(RightValue v : values){
 						thisArg.add((RightValue)v.clone());
@@ -704,7 +714,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				
 				for(int i=0; i<iie.getArgCount(); i++){
 					Value arg = iie.getArg(i);
-					Set<RightValue> vs = resolveRightValue(arg, in, "RegularInstanceInvoke");
+					Set<RightValue> vs = AnalysisUtility.resolveRightValue(arg, in, "RegularInstanceInvoke");
 					crv.addArgSet(i, vs);
 				}
 				out.addNewValue(ie, crv);
@@ -715,7 +725,7 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 				CallRetValue crv = new CallRetValue(ie.getMethod());
 				for(int i=0; i<sie.getArgCount(); i++){
 					Value arg = sie.getArg(i);
-					Set<RightValue> vs = resolveRightValue(arg, in, "RegularStaticInvoke");
+					Set<RightValue> vs = AnalysisUtility.resolveRightValue(arg, in, "RegularStaticInvoke");
 					crv.addArgSet(i, vs);
 				}
 				out.addNewValue(ie, crv);
@@ -809,18 +819,6 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 		}
 	}
 	
-	private boolean defAnalysisMapValueContainKey(DefAnalysisMap in, Value key){
-		for(Set<RightValue> valueSet : in.values()){
-			if(valueSet.contains(key))
-				return true;
-			else{
-				for(RightValue rv : valueSet)
-					System.out.println("  DAMCK:"+rv+" VS "+key);
-			}
-		}
-		return false;
-	}
-
 	@Override
 	protected void copy(DefAnalysisMap source, DefAnalysisMap dest) {
 		if(dest==null){
@@ -836,158 +834,8 @@ public class IntraProcedureAnalysis extends ForwardFlowAnalysis<Unit, DefAnalysi
 	
 	
 	
-	//mapping 1 -> n
-	//Results List<instanceFieldValue>
-	private List<RightValue> fromInstanceFieldRef2InstanceFieldValue(InstanceFieldRef v, DefAnalysisMap in){
-		List<RightValue> rs = new ArrayList<RightValue>();
-		LinkedList<SootField> fields = new LinkedList<SootField>();
-		
-		InstanceFieldRef tmp = (InstanceFieldRef)v;
-		Value b = tmp.getBase();
-		SootField f = tmp.getField();
-		fields.addFirst(f);
-		if(in.containsKey(b)){
-			for(RightValue rv : in.get(b)){
-				if(rv instanceof ConstantValue || rv instanceof UndefinedValue){
-					System.out.println("ALERT fromInstanceFieldRef2InstanceFieldValue base is const or undefined.");
-					System.out.println("  do nothing. "+rv);
-				}
-				else if(rv instanceof AtomRightValue){
-					List<SootField> newFields = copyList(fields);
-					rs.add(new InstanceFieldValue((AtomRightValue)rv, newFields));
-				}
-				else if(rv instanceof InstanceFieldValue){
-					InstanceFieldValue ifv = (InstanceFieldValue)rv;
-					List<SootField> newFields = ifv.getCloneFields();
-					newFields.add(f);
-					rs.add(new InstanceFieldValue(ifv.getBase(), newFields));
-				}
-				else{
-					System.out.println("  DEBUG: getInstanceFieldValue ignore "+rv+" "+rv.getClass());
-				}
-			}
-		}
-		else if(b instanceof Ref){
-			//TODO: needs further testing if ref's base can be ref.
-			//Now we assume it shouldn't.
-			System.out.println("ALERT: getInstanceFieldValue TODO: ref's base can be ref."+b);
-		}
-		else{
-			System.out.println("  ALERT: getInstanceFieldValue: cannot find ref's base.");
-		}
-		
-		return rs;
-	}
 	
-	//This function returns a list of ArrayDataValue to be updated for ArrayRef assignment.
-	private List<ArrayDataValue> findLeftOpsForArrayRef(ArrayRef a, DefAnalysisMap in){
-		List<ArrayDataValue> rs = new ArrayList<ArrayDataValue>();
-		if(in.containsKey(a.getBase())){
-			for(RightValue v : in.get(a.getBase())){
-				ArrayDataValue adv = in.findArrayDataValueFromBase(v);
-				if (adv==null){
-					System.out.println("ALERT: cannot find ArrayDataValue for: "+v);
-					adv = new ArrayDataValue(v);
-				}
-				rs.add(adv);
-			}
-		}
-		return rs;
-	}
 	
-	//This function find all ArrayRef's values.
-	//It's guaranteed that any resolved value cannot be further resolved to another one
-	private Set<RightValue> resolveArrayRefRightValue(ArrayRef ar, DefAnalysisMap in){
-		Set<RightValue> rs = new HashSet<RightValue>();
-		
-		Value rv = ar.getBase();
-		Set<RightValue> baseSet = in.get(rv);
-		if(baseSet == null)
-			return rs;
-		
-		for(RightValue base : baseSet){
-			ArrayDataValue adv = in.findArrayDataValueFromBase(base);
-			if(adv == null){
-				System.out.println("ALERT: Cannot find ARRVAL for base: "+base+". add base!"+ar);
-				//TODO: if cannot find array data, use its base. Think about this design.
-				rs.add(base);
-			}
-			else{
-				for(RightValue v : adv.getData()){
-					rs.add(v);
-				}
-			}
-		}
-		return rs;
-	}
 	
-	//find Value's Right Value. 
-	//if it's Ref, we might need to resolve its base first and then 
-	//it's guaranteed that any resulved value can not be further solved to another value.
-	private Set<RightValue> resolveRightValue(Value arg,  DefAnalysisMap in, String msg){
-		Set<RightValue> values = new HashSet<RightValue>();
-		//System.out.println("YYY "+arg);
-		if(arg instanceof Constant){
-			values.add(new ConstantValue(arg));
-		}
-		else if(!(arg instanceof Ref) && in.containsKey(arg)){
-			//System.out.println("  YYY1 "+arg);
-			List<RightValue> tmp = new ArrayList<RightValue>(in.get(arg));
-			Collections.sort(tmp, ValueComparator);
-			for(RightValue v : tmp)
-				values.add(v);
-		}
-		else if((arg instanceof ArrayRef) && in.containsKey(arg)){
-			//TODO: maybe we can remove this branch?
-			List<RightValue> tmp = new ArrayList<RightValue>(in.get(arg));
-			Collections.sort(tmp, ValueComparator);
-			for(RightValue v : tmp)
-				values.add(v);
-		}
-		else if(arg instanceof Ref){
-			if(arg instanceof ArrayRef){
-				ArrayRef arrRef = (ArrayRef)arg;
-				Set<RightValue> tmp = resolveArrayRefRightValue(arrRef, in);
-				if (tmp==null){
-					System.out.println("ALERT: cannot resolve array: "+arrRef+" from "+in);
-					values = new HashSet<RightValue>();
-				}
-				else
-					values = tmp;
-			}
-			else if(arg instanceof InstanceFieldRef){
-				InstanceFieldRef ifr = (InstanceFieldRef)arg;
-				List<RightValue> tmp = fromInstanceFieldRef2InstanceFieldValue(ifr, in);
-				//System.out.println("    DEBUG:  InstanceFieldRef: found "+tmp.size()+" base values.");
-				for(RightValue rv : tmp){
-					if(in.containsKey(rv)){
-						for(RightValue v : in.get(rv))
-							values.add(v);
-					}
-					else 
-						values.add(rv);
-				}
-			}
-			else if(arg instanceof StaticFieldRef){
-				StaticFieldRef sfr = (StaticFieldRef)arg;
-				values.add(new StaticFieldValue(sfr.getField().getDeclaringClass(), sfr.getField()));
-			}
-			else{
-				System.out.println("  ALERT: "+msg+" unknown ref: "+arg);
-			}
-		}
-		else{
-			System.out.println("ALERT: cannot resolve this non-ref value: "+arg);
-		}
-		return values;
-	}
-	
-	private <T> List<T> copyList(List<T> another){
-		List<T> newList = new ArrayList<T>(another.size());
-		for(T o : another){
-			newList.add(o);
-		}
-		return newList;
-	}
 
 }

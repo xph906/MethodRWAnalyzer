@@ -76,16 +76,19 @@ public class MethodRWAnalyzer {
 		String[] sootArgs = {"nu.dataflow.MainClass",
 				"-cp", classPath,  
 				"-app", "-w","-ire","-no-bodies-for-excluded",
+				"-p", "jb", "use-original-names",
 				"-main-class", "nu.dataflow.MainClass",
 				"-f", "none" 
 		};
 		
+		System.out.println("ALERT: TODO: deal with the classes we would like to analyze.");
 		PackManager.v().getPack("jtp").add(
 			    new Transform("jtp.myTransform", new RWAnalyzerBodyTransformer()));
+		//PackManager.v().
 		Options.v().set_src_prec(Options.src_prec_apk);
 		Main.v().main(sootArgs);
 		postInterprocedureAnalyze();
-		displayResults();
+		//displayResults();
 		
 		return results;
 	}
@@ -302,11 +305,22 @@ public class MethodRWAnalyzer {
 		@Override
 		protected void internalTransform(Body b, String phaseName,
 				Map<String, String> options) {
-			if(b.getMethod().getDeclaringClass().getName().startsWith("android"))
+			
+			//TODO: rewrite this part.
+			if(b.getMethod().isMain()){
+				System.out.println("Start to analyze main!");
+			}
+			else if(b.getMethod().getName().contains("findViewById"))
 				return;
-			if(b.getMethod().getDeclaringClass().getName().startsWith("jdk"))
+			else if(b.getMethod().getName().contains("setOnClickEventListener"))
 				return;
-			if(b.getMethod().getDeclaringClass().getName().startsWith("org"))
+			else if(b.getMethod().getName().contains("setContentView"))
+				return;
+			else if(b.getMethod().getDeclaringClass().getName().startsWith("android"))
+				return;
+			else if(b.getMethod().getDeclaringClass().getName().startsWith("jdk"))
+				return;
+			else if(b.getMethod().getDeclaringClass().getName().startsWith("org"))
 				return;
 			
 			System.out.println("TEST:"+b.getMethod().getDeclaringClass().getName()+":"+b.getMethod().getName());
