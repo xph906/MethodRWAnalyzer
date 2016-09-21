@@ -168,7 +168,7 @@ public class MethodRWAnalyzer {
 											//System.out.println("  replace 3."+bb);
 										}
 										else{
-											System.out.println("  ignore base:"+bb);
+											//System.out.println("  ignore base:"+bb);
 										}
 									}
 								}
@@ -201,7 +201,7 @@ public class MethodRWAnalyzer {
 											//System.out.println("  replace 33."+bb);
 										}
 										else{
-											System.out.println("  ignore base:"+bb);
+											//System.out.println("  ignore base:"+bb);
 										}
 									}
 								}
@@ -247,7 +247,7 @@ public class MethodRWAnalyzer {
 											//System.out.println("  replace 23."+bb);
 										}
 										else{
-											System.out.println("  ignore 2base:"+bb);
+											//System.out.println("  ignore 2base:"+bb);
 										}
 									}
 								}
@@ -262,7 +262,7 @@ public class MethodRWAnalyzer {
 											InstanceFieldValue newVal = (InstanceFieldValue)ifv.clone();
 											newVal.setBase((ThisValue)bb);
 											writeFields.add(newVal);
-											System.out.println("  replace 211.");
+											
 										}
 										else if(bb instanceof InstanceFieldValue){
 											count++;
@@ -270,17 +270,16 @@ public class MethodRWAnalyzer {
 											//ibb.getFields().addAll(ifv.getFields());
 											ibb.addFields(ifv.getCloneFields());
 											writeFields.add(ibb);
-											System.out.println("  replace 222."+ibb+" "+ifv);
+											
 										}
 										else if(bb instanceof StaticFieldValue){
 											count++;
 											InstanceFieldValue newIFV = (InstanceFieldValue)ifv.clone();
 											newIFV.setBase((StaticFieldValue)bb);
 											writeFields.add((RightValue)newIFV);
-											System.out.println("  replace 233."+bb);
 										}
 										else{
-											System.out.println("  ignore base:"+bb);
+											//System.out.println("  ignore base:"+bb);
 										}
 									}
 								}
@@ -296,7 +295,7 @@ public class MethodRWAnalyzer {
 				if(readFields.size() > readSize || writeFields.size()>writeSize){
 					changed = true;
 				}
-				System.out.println("END R:"+readFields.size()+" W:"+writeFields.size()+" ||"+m);
+				//System.out.println("END R:"+readFields.size()+" W:"+writeFields.size()+" ||"+m);
 			}
 		}while(changed && iterCount<10);
 	}
